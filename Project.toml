@@ -3,8 +3,12 @@ uuid = "53c2dc0f-f7d5-43fd-8906-6c0220547083"
 authors = ["Pablo Zubieta"]
 version = "0.1.0"
 
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+
 [compat]
-julia = "1"
+julia = "1.5"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
