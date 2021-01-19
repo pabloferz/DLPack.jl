@@ -40,21 +40,19 @@ end
 
 Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 
-function jl_dtypes()
-    Dict(
-        Int8 => DLDataType(kDLInt, 8, 1),
-        Int16 => DLDataType(kDLInt, 16, 1),
-        Int32 => DLDataType(kDLInt, 32, 1),
-        Int64 => DLDataType(kDLInt, 64, 1),
-        UInt8 => DLDataType(kDLUInt, 8, 1),
-        UInt16 => DLDataType(kDLUInt, 16, 1),
-        UInt32 => DLDataType(kDLUInt, 32, 1),
-        UInt64 => DLDataType(kDLUInt, 64, 1),
-        Float16 => DLDataType(kDLFloat, 16, 1),
-        Float32 => DLDataType(kDLFloat, 32, 1),
-        Float64 => DLDataType(kDLFloat, 64, 1)
-    )
-end
+jl_dtypes() = Dict(
+    Int8 => DLDataType(kDLInt, 8, 1),
+    Int16 => DLDataType(kDLInt, 16, 1),
+    Int32 => DLDataType(kDLInt, 32, 1),
+    Int64 => DLDataType(kDLInt, 64, 1),
+    UInt8 => DLDataType(kDLUInt, 8, 1),
+    UInt16 => DLDataType(kDLUInt, 16, 1),
+    UInt32 => DLDataType(kDLUInt, 32, 1),
+    UInt64 => DLDataType(kDLUInt, 64, 1),
+    Float16 => DLDataType(kDLFloat, 16, 1),
+    Float32 => DLDataType(kDLFloat, 32, 1),
+    Float64 => DLDataType(kDLFloat, 64, 1)
+)
 
 struct DLTensor
     data::Ptr{Cvoid}
