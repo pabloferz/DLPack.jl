@@ -129,6 +129,10 @@ end
 const DLVector{T} = DLArray{T,1}
 const DLMatrix{T} = DLArray{T,2}
 
+###########
+#  Utils  #
+###########
+
 device_type(ctx::DLContext) = DLDeviceType(ctx.device_type)
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
 device_type(manager::DLManagedTensor) = device_type(manager.dl_tensor)
@@ -166,6 +170,38 @@ end
 byte_offset(tensor::DLTensor) = Int(tensor.byte_offset)
 byte_offset(manager::DLManagedTensor) = byte_offset(manager.dl_tensor)
 byte_offset(array::DLArray) = byte_offset(array.manager)
+
+Base.pointer(tensor::DLTensor) = tensor.data
+Base.pointer(manager::DLManagedTensor) = pointer(manger.dl_tensor)
+Base.pointer(array::DLArray) = pointer(array.manger)
+
+#################
+#  Conversions  #
+#################
+
+function Base.convert(::Type{Array}, array::DLArray{T}) where {T}
+    device = device_type(array)
+    addr = Int(pointer(array))
+    dims = size(array)
+    if device == kDLCPU
+        return unsafe_wrap(Array, Ptr{T}(addr), dims)
+    elseif device == kDLGPU
+        return Array(unsafe_wrap(CuArray, CuPtr{T}(addr), dims))
+    end
+    throw(ArgumentError("Cannot convert arrays from devices of type $device"))
+end
+
+function Base.convert(::Type{CuArray}, array::DLArray{T}) where {T}
+    device = device_type(array)
+    addr = Int(pointer(array))
+    dims = size(array)
+    if device == kDLGPU
+        return unsafe_wrap(CuArray, CuPtr{T}(addr), dims)
+    elseif device == kDLCPU
+        return CuArray(unsafe_wrap(Array, Ptr{T}(addr), dims))
+    end
+    throw(ArgumentError("Cannot convert arrays from devices of type $device"))
+end
 
 
 end
