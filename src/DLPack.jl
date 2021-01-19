@@ -1,7 +1,7 @@
 module DLPack
 
 
-# using CUDA  # For exporting to CuArrays
+using CUDA  # For exporting to CuArrays
 using PyCall
 
 
@@ -77,12 +77,14 @@ function DLManagedTensor(po::PyObject)
         throw(ArgumentError("PyObject must be a PyCapsule"))
     end
 
-    # Replace the capsule destructor to prevent it from deleting the tensor
+    # Replace the capsule destructor to prevent it from deleting the tensor.
+    # We will use the `DLManagedTensor.deleter` instead
     PyCall.@pycheck ccall(
         (@pysym :PyCapsule_SetDestructor),
         Cint, (PyPtr, Ptr{Cvoid}),
         po, C_NULL
     )
+
     dlptr = PyCall.@pycheck ccall(
         (@pysym :PyCapsule_GetPointer),
         Ptr{DLManagedTensor}, (PyPtr, Ptr{UInt8}),
@@ -91,7 +93,7 @@ function DLManagedTensor(po::PyObject)
     manager = unsafe_load(dlptr)
 
     if manager.deleter != C_NULL
-        delete = manager ->ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), Ref(manager))
+        delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), Ref(manager))
         finalizer(delete, manager)
     end
 
@@ -101,9 +103,8 @@ end
 struct DLArray{T,N}
     manager::DLManagedTensor
 
-    function DLArray{DLDataType,N}(f, po::PyObject) where {T,N}
-        capsule = pycall(f, PyObject, v)  # |> PyCall.pystealref!
-        manager = DLManagedTensor(capsule)
+    function DLArray{DLDataType,N}(po::PyObject) where {T,N}
+        manager = DLManagedTensor(po)
 
         if N != (n = manager.dl_tensor.ndim)
             throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
@@ -112,9 +113,8 @@ struct DLArray{T,N}
         return new(manager)
     end
 
-    function DLArray{T,N}(f, po::PyObject) where {T,N}
-        capsule = pycall(f, PyObject, v)
-        manager = DLManagedTensor(capsule)
+    function DLArray{T,N}(po::PyObject) where {T,N}
+        manager = DLManagedTensor(po)
 
         if N != (n = manager.dl_tensor.ndim)
             throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
