@@ -40,7 +40,7 @@ end
 
 Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 
-jl_dtypes() = Dict(
+jltypes_to_dtypes() = Dict(
     Int8 => DLDataType(kDLInt, 8, 1),
     Int16 => DLDataType(kDLInt, 16, 1),
     Int32 => DLDataType(kDLInt, 32, 1),
@@ -118,7 +118,7 @@ struct DLArray{T,N}
 
         if N != (n = manager.dl_tensor.ndim)
             throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
-        elseif jl_dtypes()[T] != (D = manager.dl_tensor.dtype)
+        elseif jltypes_to_dtypes()[T] != (D = manager.dl_tensor.dtype)
             throw(ArgumentError("Type mismatch, object dtype is $D"))
         end
 
@@ -175,32 +175,24 @@ Base.pointer(tensor::DLTensor) = tensor.data
 Base.pointer(manager::DLManagedTensor) = pointer(manger.dl_tensor)
 Base.pointer(array::DLArray) = pointer(array.manger)
 
-#################
-#  Conversions  #
-#################
+##############
+#  Wrappers  #
+##############
 
-function Base.convert(::Type{Array}, array::DLArray{T}) where {T}
-    device = device_type(array)
-    addr = Int(pointer(array))
-    dims = size(array)
-    if device == kDLCPU
-        return unsafe_wrap(Array, Ptr{T}(addr), dims)
-    elseif device == kDLGPU
-        return Array(unsafe_wrap(CuArray, CuPtr{T}(addr), dims))
+function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
+    if device_type(array) == kDLCPU
+        addr = Int(pointer(array))
+        return unsafe_wrap(Array, Ptr{T}(addr), size(array))
     end
-    throw(ArgumentError("Cannot convert arrays from devices of type $device"))
+    throw(ArgumentError("Only CPU arrays can be wrapped with Array"))
 end
 
-function Base.convert(::Type{CuArray}, array::DLArray{T}) where {T}
-    device = device_type(array)
-    addr = Int(pointer(array))
-    dims = size(array)
-    if device == kDLGPU
-        return unsafe_wrap(CuArray, CuPtr{T}(addr), dims)
-    elseif device == kDLCPU
-        return CuArray(unsafe_wrap(Array, Ptr{T}(addr), dims))
+function Base.unsafe_wrap(::Type{CuArray}, array::DLArray{T}) where {T}
+    if device_type(array) == kDLGPU
+        addr = Int(pointer(array))
+        return unsafe_wrap(CuArray, CuPtr{T}(addr), size(array))
     end
-    throw(ArgumentError("Cannot convert arrays from devices of type $device"))
+    throw(ArgumentError("Only GPU arrays can be wrapped with CuArray"))
 end
 
 
