@@ -100,10 +100,10 @@ function DLManagedTensor(po::PyObject)
     return manager
 end
 
-struct DLArray{T,N}
+struct DLArray{T, N}
     manager::DLManagedTensor
 
-    function DLArray{DLDataType,N}(po::PyObject) where {T,N}
+    function DLArray{DLDataType, N}(po::PyObject) where {T, N}
         manager = DLManagedTensor(po)
 
         if N != (n = manager.dl_tensor.ndim)
@@ -113,7 +113,7 @@ struct DLArray{T,N}
         return new(manager)
     end
 
-    function DLArray{T,N}(po::PyObject) where {T,N}
+    function DLArray{T, N}(po::PyObject) where {T, N}
         manager = DLManagedTensor(po)
 
         if N != (n = manager.dl_tensor.ndim)
@@ -126,8 +126,8 @@ struct DLArray{T,N}
     end
 end
 
-const DLVector{T} = DLArray{T,1}
-const DLMatrix{T} = DLArray{T,2}
+const DLVector{T} = DLArray{T, 1}
+const DLMatrix{T} = DLArray{T, 2}
 
 ###########
 #  Utils  #
@@ -140,18 +140,18 @@ device_type(array::DLArray) = device_type(array.manager)
 
 Base.eltype(array::DLArray{T}) where {T} = T
 
-Base.ndims(array::DLArray{T,N}) where {T,N} = N
+Base.ndims(array::DLArray{T, N}) where {T, N} = N
 
 _size(tensor::DLTensor) = tensor.shape
 _size(manager::DLManagedTensor) = _size(manager.dl_tensor)
 _size(array::DLArray) = _size(array.manager)
 
-function Base.size(array::DLArray{T,N}) where {T,N}
+function Base.size(array::DLArray{T, N}) where {T, N}
     ptr = Base.unsafe_convert(Ptr{NTuple{N, Int64}}, _size(array))
     return unsafe_load(ptr)
 end
 #
-function Base.size(array::DLArray{T,N}, d::Integer) where {T,N}
+function Base.size(array::DLArray{T, N}, d::Integer) where {T, N}
     if 1 ≤ d
         return d ≤ N ? size(array)[d] : Int64(1)
     end
@@ -162,7 +162,7 @@ _strides(tensor::DLTensor) = tensor.strides
 _strides(manager::DLManagedTensor) = _strides(manager.dl_tensor)
 _strides(array::DLArray) = _strides(array.manager)
 
-function Base.strides(array::DLArray{T,N}) where {T,N}
+function Base.strides(array::DLArray{T, N}) where {T, N}
     ptr = Base.unsafe_convert(Ptr{NTuple{N, Int64}}, _strides(array))
     return unsafe_load(ptr)
 end
