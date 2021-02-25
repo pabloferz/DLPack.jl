@@ -172,8 +172,8 @@ byte_offset(manager::DLManagedTensor) = byte_offset(manager.dl_tensor)
 byte_offset(array::DLArray) = byte_offset(array.manager)
 
 Base.pointer(tensor::DLTensor) = tensor.data
-Base.pointer(manager::DLManagedTensor) = pointer(manger.dl_tensor)
-Base.pointer(array::DLArray) = pointer(array.manger)
+Base.pointer(manager::DLManagedTensor) = pointer(manager.dl_tensor)
+Base.pointer(array::DLArray) = pointer(array.manager)
 
 ##############
 #  Wrappers  #
@@ -182,7 +182,7 @@ Base.pointer(array::DLArray) = pointer(array.manger)
 function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
     if device_type(array) == kDLCPU
         addr = Int(pointer(array))
-        return unsafe_wrap(Array, Ptr{T}(addr), size(array))
+        return GC.@preserve array unsafe_wrap(Array, Ptr{T}(addr), size(array))
     end
     throw(ArgumentError("Only CPU arrays can be wrapped with Array"))
 end
@@ -190,7 +190,7 @@ end
 function Base.unsafe_wrap(::Type{CuArray}, array::DLArray{T}) where {T}
     if device_type(array) == kDLGPU
         addr = Int(pointer(array))
-        return unsafe_wrap(CuArray, CuPtr{T}(addr), size(array))
+        return GC.@preserve array unsafe_wrap(CuArray, CuPtr{T}(addr), size(array))
     end
     throw(ArgumentError("Only GPU arrays can be wrapped with CuArray"))
 end
