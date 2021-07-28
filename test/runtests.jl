@@ -20,6 +20,11 @@ dlpack = pyimport("jax.dlpack")
     v = np.asarray([1.0, 2.0, 3.0])
 
     dlv = DLVector{Float32}(@pycall dlpack.to_dlpack(v)::PyObject)
+    tensor = dlv.manager.dl_tensor
+    
+    @test tensor.ndim == 1
+    @test tensor.dtype == DLPack.jltypes_to_dtypes()[Float32]
+
     if DLPack.device_type(dlv) == DLPack.kDLCPU
         jv = unsafe_wrap(Array, dlv)
         jv[1] = 0  # mutate a jax's tensor
