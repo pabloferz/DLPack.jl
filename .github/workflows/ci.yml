@@ -44,5 +44,5 @@ jobs:
             ${{ runner.os }}-
       - uses: julia-actions/julia-buildpkg@v1
       - name: Build PyCall
-        run: julia -e 'ENV["PYTHON"]=""; using Pkg; Pkg.build("PyCall")'
+        run: julia --project=. -e 'ENV["PYTHON"]=""; using Pkg; Pkg.build("PyCall")'
       - uses: julia-actions/julia-runtest@v1
