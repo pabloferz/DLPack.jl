@@ -24,7 +24,6 @@ jobs:
           - ubuntu-latest
           - macOS-latest
         arch: [x64]
-        python-version: [3.x]
     steps:
       - uses: actions/checkout@v2
       - name: Setup julia
@@ -32,14 +31,6 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - name: Setup python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade --user "jax[cpu]"
       - uses: actions/cache@v2
         env:
           cache-name: cache-artifacts
