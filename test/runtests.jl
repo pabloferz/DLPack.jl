@@ -4,12 +4,6 @@ using PyCall
 using Test
 
 
-@info "Installing JAX"
-#
-packages = "jax[cpu]"
-run(PyCall.python_cmd(`-m pip install $packages`))
-
-
 # Load JAX
 jax = pyimport("jax")
 np = pyimport("jax.numpy")
