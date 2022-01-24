@@ -1,7 +1,7 @@
 module DLPack
 
 
-using CUDA  # For exporting to CuArrays
+using Requires
 using PyCall
 
 
@@ -138,6 +138,7 @@ end
 const DLVector{T} = DLArray{T, 1}
 const DLMatrix{T} = DLArray{T, 2}
 
+
 ###########
 #  Utils  #
 ###########
@@ -184,6 +185,7 @@ Base.pointer(tensor::DLTensor) = tensor.data
 Base.pointer(manager::DLManagedTensor) = pointer(manager.dl_tensor)
 Base.pointer(array::DLArray) = pointer(array.manager)
 
+
 ##############
 #  Wrappers  #
 ##############
@@ -196,13 +198,22 @@ function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
     throw(ArgumentError("Only CPU arrays can be wrapped with Array"))
 end
 
-function Base.unsafe_wrap(::Type{CuArray}, array::DLArray{T}) where {T}
-    if device_type(array) == kDLCUDA
-        addr = Int(pointer(array))
-        return GC.@preserve array unsafe_wrap(CuArray, CuPtr{T}(addr), size(array))
+
+function __init__()
+
+    @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
+        function Base.unsafe_wrap(::Type{CUDA.CuArray}, array::DLArray{T}) where {T}
+            if device_type(array) == kDLCUDA
+                addr = Int(pointer(array))
+                return GC.@preserve array unsafe_wrap(
+                    CUDA.CuArray, CUDA.CuPtr{T}(addr), size(array)
+                )
+            end
+            throw(ArgumentError("Only CUDA arrays can be wrapped with CuArray"))
+        end
     end
-    throw(ArgumentError("Only CUDA arrays can be wrapped with CuArray"))
+
 end
 
 
-end
+end  # module DLPack
