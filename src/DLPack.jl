@@ -10,18 +10,23 @@ export DLArray, DLMatrix, DLVector
 
 @enum DLDeviceType::Cint begin
     kDLCPU = 1
-    kDLGPU = 2
-    kDLCPUPinned = 3
+    kDLCUDA = 2
+    kDLCUDAHost = 3
     kDLOpenCL = 4
     kDLVulkan = 7
     kDLMetal = 8
     kDLVPI = 9
     kDLROCM = 10
+    kDLROCMHost = 11
     kDLExtDev = 12
+    kDLCUDAManaged = 13
+    kDLOneAPI = 14
+    kDLWebGPU = 15
+    kDLHexagon = 16
 end
 
-struct DLContext
-    device_type::Cint
+struct DLDevice
+    device_type::DLDeviceType
     device_id::Cint
 end
 
@@ -29,7 +34,9 @@ end
     kDLInt = 0
     kDLUInt = 1
     kDLFloat = 2
+    kDLOpaqueHandle = 3
     kDLBfloat = 4
+    kDLComplex = 5
 end
 
 struct DLDataType
@@ -51,12 +58,14 @@ jltypes_to_dtypes() = Dict(
     UInt64 => DLDataType(kDLUInt, 64, 1),
     Float16 => DLDataType(kDLFloat, 16, 1),
     Float32 => DLDataType(kDLFloat, 32, 1),
-    Float64 => DLDataType(kDLFloat, 64, 1)
+    Float64 => DLDataType(kDLFloat, 64, 1),
+    ComplexF32 => DLDataType(kDLComplex, 64, 1),
+    ComplexF64 => DLDataType(kDLComplex, 128, 1),
 )
 
 struct DLTensor
     data::Ptr{Cvoid}
-    ctx::DLContext
+    ctx::DLDevice
     ndim::Cint
     dtype::DLDataType
     shape::Ptr{Clonglong}
@@ -188,11 +197,11 @@ function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
 end
 
 function Base.unsafe_wrap(::Type{CuArray}, array::DLArray{T}) where {T}
-    if device_type(array) == kDLGPU
+    if device_type(array) == kDLCUDA
         addr = Int(pointer(array))
         return GC.@preserve array unsafe_wrap(CuArray, CuPtr{T}(addr), size(array))
     end
-    throw(ArgumentError("Only GPU arrays can be wrapped with CuArray"))
+    throw(ArgumentError("Only CUDA arrays can be wrapped with CuArray"))
 end
 
 
