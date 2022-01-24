@@ -9,6 +9,10 @@ using PyCall
 using Test
 
 
+@info "Installing JAX"
+run(PyCall.python_cmd(`-m pip install --upgrade jax\[cpu\]`))
+
+
 # Load JAX
 jax = pyimport("jax")
 np = pyimport("jax.numpy")
@@ -20,7 +24,7 @@ dlpack = pyimport("jax.dlpack")
 
     dlv = DLVector{Float32}(@pycall dlpack.to_dlpack(v)::PyObject)
     tensor = dlv.manager.dl_tensor
-    
+
     @test tensor.ndim == 1
     @test tensor.dtype == DLPack.jltypes_to_dtypes()[Float32]
 
