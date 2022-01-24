@@ -142,7 +142,7 @@ const DLMatrix{T} = DLArray{T, 2}
 #  Utils  #
 ###########
 
-device_type(ctx::DLDevice) = DLDeviceType(ctx.device_type)
+device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
 device_type(manager::DLManagedTensor) = device_type(manager.dl_tensor)
 device_type(array::DLArray) = device_type(array.manager)
