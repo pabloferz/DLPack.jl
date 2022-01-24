@@ -36,5 +36,5 @@ dlpack = pyimport("jax.dlpack")
         jv[1:1] .= 0  # mutate a jax's tensor
     end
 
-    @test py"$np.all($v[:] == $np.asarray([0.0, 2.0, 3.0])).copy().item()"
+    @test py"$np.all($v[:] == $np.asarray([0.0, 2.0, 3.0])).item()"
 end
