@@ -1,12 +1,23 @@
 module DLPack
 
 
-using Requires
-using PyCall
+#================#
+#  Dependencies  #
+#================#
 
+using Requires
+
+
+#===========#
+#  Exports  #
+#===========#
 
 export DLArray, DLMatrix, DLVector
 
+
+#=========#
+#  Types  #
+#=========#
 
 @enum DLDeviceType::Cint begin
     kDLCPU = 1
@@ -45,6 +56,62 @@ struct DLDataType
     lanes::Cushort
 end
 
+struct DLTensor
+    data::Ptr{Cvoid}
+    ctx::DLDevice
+    ndim::Cint
+    dtype::DLDataType
+    shape::Ptr{Clonglong}
+    strides::Ptr{Clonglong}
+    byte_offset::Culonglong
+end
+
+# Defined as mutable since we need a finalizer that calls `deleter`
+# to destroy its original enclosing context `manager_ctx`
+mutable struct DLManagedTensor
+    dl_tensor::DLTensor
+    manager_ctx::Ptr{Cvoid}
+    deleter::Ptr{Cvoid}
+
+    function DLManagedTensor(dlptr::Ptr{DLManagedTensor})
+        manager = unsafe_load(dlptr)
+
+        if manager.deleter != C_NULL
+            delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), Ref(manager))
+            finalizer(delete, manager)
+        end
+
+        return manager
+    end
+end
+
+struct DLArray{T, N}
+    manager::DLManagedTensor
+
+    function DLArray(manager::DLManagedTensor)
+        T = dtypes_to_jltypes()[manager.dl_tensor.dtype]
+        N = manager.dl_tensor.ndim
+        return new{T, N}(manager)
+    end
+
+    function DLArray{T, N}(manager::DLManagedTensor) where {T, N}
+        if N != (n = manager.dl_tensor.ndim)
+            throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
+        elseif jltypes_to_dtypes()[T] !== (D = manager.dl_tensor.dtype)
+            throw(ArgumentError("Type mismatch, object dtype is $D"))
+        end
+        return new{T, N}(manager)
+    end
+end
+
+const DLVector{T} = DLArray{T, 1}
+const DLMatrix{T} = DLArray{T, 2}
+
+
+#=========#
+#  Utils  #
+#=========#
+
 Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 
 jltypes_to_dtypes() = Dict(
@@ -63,85 +130,21 @@ jltypes_to_dtypes() = Dict(
     ComplexF64 => DLDataType(kDLComplex, 128, 1),
 )
 
-struct DLTensor
-    data::Ptr{Cvoid}
-    ctx::DLDevice
-    ndim::Cint
-    dtype::DLDataType
-    shape::Ptr{Clonglong}
-    strides::Ptr{Clonglong}
-    byte_offset::Culonglong
-end
-
-# Defined as mutable since we need a finalizer that calls `deleter`
-# to destroy its original enclosing context `manager_ctx`
-mutable struct DLManagedTensor
-    dl_tensor::DLTensor
-    manager_ctx::Ptr{Cvoid}
-    deleter::Ptr{Cvoid}
-end
-
-function DLManagedTensor(po::PyObject)
-    if !pyisinstance(po, PyCall.@pyglobalobj(:PyCapsule_Type))
-        throw(ArgumentError("PyObject must be a PyCapsule"))
-    end
-
-    # Replace the capsule destructor to prevent it from deleting the tensor.
-    # We will use the `DLManagedTensor.deleter` instead
-    PyCall.@pycheck ccall(
-        (@pysym :PyCapsule_SetDestructor),
-        Cint, (PyPtr, Ptr{Cvoid}),
-        po, C_NULL
-    )
-
-    dlptr = PyCall.@pycheck ccall(
-        (@pysym :PyCapsule_GetPointer),
-        Ptr{DLManagedTensor}, (PyPtr, Ptr{UInt8}),
-        po, ccall((@pysym :PyCapsule_GetName), Ptr{UInt8}, (PyPtr,), po)
-    )
-    manager = unsafe_load(dlptr)
-
-    if manager.deleter != C_NULL
-        delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), Ref(manager))
-        finalizer(delete, manager)
-    end
-
-    return manager
-end
-
-struct DLArray{T, N}
-    manager::DLManagedTensor
-
-    function DLArray{DLDataType, N}(po::PyObject) where {T, N}
-        manager = DLManagedTensor(po)
-
-        if N != (n = manager.dl_tensor.ndim)
-            throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
-        end
-
-        return new(manager)
-    end
-
-    function DLArray{T, N}(po::PyObject) where {T, N}
-        manager = DLManagedTensor(po)
-
-        if N != (n = manager.dl_tensor.ndim)
-            throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
-        elseif jltypes_to_dtypes()[T] != (D = manager.dl_tensor.dtype)
-            throw(ArgumentError("Type mismatch, object dtype is $D"))
-        end
-
-        return new(manager)
-    end
-end
-
-const DLVector{T} = DLArray{T, 1}
-const DLMatrix{T} = DLArray{T, 2}
-
-
-###########
-#  Utils  #
-###########
+dtypes_to_jltypes() = Dict(
+    DLDataType(kDLInt, 8, 1) => Int8,
+    DLDataType(kDLInt, 16, 1) => Int16,
+    DLDataType(kDLInt, 32, 1) => Int32,
+    DLDataType(kDLInt, 64, 1) => Int64,
+    DLDataType(kDLUInt, 8, 1) => UInt8,
+    DLDataType(kDLUInt, 16, 1) => UInt16,
+    DLDataType(kDLUInt, 32, 1) => UInt32,
+    DLDataType(kDLUInt, 64, 1) => UInt64,
+    DLDataType(kDLFloat, 16, 1) => Float16,
+    DLDataType(kDLFloat, 32, 1) => Float32,
+    DLDataType(kDLFloat, 64, 1) => Float64,
+    DLDataType(kDLComplex, 64, 1) => ComplexF32,
+    DLDataType(kDLComplex, 128, 1) => ComplexF64,
+)
 
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
@@ -185,11 +188,6 @@ Base.pointer(tensor::DLTensor) = tensor.data
 Base.pointer(manager::DLManagedTensor) = pointer(manager.dl_tensor)
 Base.pointer(array::DLArray) = pointer(array.manager)
 
-
-##############
-#  Wrappers  #
-##############
-
 function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
     if device_type(array) == kDLCPU
         addr = Int(pointer(array))
@@ -199,18 +197,18 @@ function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
 end
 
 
+#=========================#
+#  Module initialization  #
+#=========================#
+
 function __init__()
 
     @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
-        function Base.unsafe_wrap(::Type{CUDA.CuArray}, array::DLArray{T}) where {T}
-            if device_type(array) == kDLCUDA
-                addr = Int(pointer(array))
-                return GC.@preserve array unsafe_wrap(
-                    CUDA.CuArray, CUDA.CuPtr{T}(addr), size(array)
-                )
-            end
-            throw(ArgumentError("Only CUDA arrays can be wrapped with CuArray"))
-        end
+        include("cuda.jl")
+    end
+
+    @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
+        include("pycall.jl")
     end
 
 end
