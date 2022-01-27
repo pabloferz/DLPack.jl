@@ -90,7 +90,7 @@ struct DLArray{T, N}
 
     function DLArray(manager::DLManagedTensor)
         T = dtypes_to_jltypes()[manager.dl_tensor.dtype]
-        N = manager.dl_tensor.ndim
+        N = Int(manager.dl_tensor.ndim)
         return new{T, N}(manager)
     end
 
