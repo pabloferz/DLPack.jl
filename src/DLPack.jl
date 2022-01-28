@@ -1,23 +1,26 @@
 module DLPack
 
 
-#================#
-#  Dependencies  #
-#================#
+##  Dependencies  ##
 
 using Requires
 
 
-#===========#
-#  Exports  #
-#===========#
+##  Exports  ##
 
 export DLArray, DLMatrix, DLVector
 
 
-#=========#
-#  Types  #
-#=========#
+##  Constants  ##
+
+const PYCAPSULE_NAME = Ref(
+    (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
+)
+const USED_PYCAPSULE_NAME = Ref(
+    (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
+)
+
+##  Types  ##
 
 @enum DLDeviceType::Cint begin
     kDLCPU = 1
@@ -108,9 +111,7 @@ const DLVector{T} = DLArray{T, 1}
 const DLMatrix{T} = DLArray{T, 2}
 
 
-#=========#
-#  Utils  #
-#=========#
+##  Utils  ##
 
 Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 
@@ -197,9 +198,7 @@ function Base.unsafe_wrap(::Type{Array}, array::DLArray{T}) where {T}
 end
 
 
-#=========================#
-#  Module initialization  #
-#=========================#
+##  Module initialization  ##
 
 function __init__()
 
