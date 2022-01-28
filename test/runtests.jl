@@ -9,6 +9,7 @@ include("rebuild_pycall.jl")
 using PyCall
 
 
+# Just for the sake of variety:
 # Load torch with PythonCall
 const torch = PythonCall.pyimport("torch")
 # Load jax with PyCall
@@ -23,9 +24,12 @@ jax.config.update("jax_enable_x64", true)
 
     v = np.asarray([1.0, 2.0, 3.0], dtype = np.float32)
 
-    dlv = DLVector{Float32}(@pycall dlpack.to_dlpack(v)::PyObject)
-    tensor = dlv.manager.dl_tensor
+    v_capsule = @pycall dlpack.to_dlpack(v)::PyObject
+    dlv = DLVector{Float32}(v_capsule)
+    # We can only wrap once
+    @test_throws ArgumentError DLArray(v_capsule)
 
+    tensor = dlv.manager.dl_tensor
     @test tensor.ndim == 1 == ndims(dlv)
     @test tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(dlv)]
 
@@ -62,9 +66,12 @@ end
 
     v = torch.ones((2, 4), dtype = torch.float64)
 
-    dlv = DLMatrix{Float64}(torch.to_dlpack(v))
-    tensor = dlv.manager.dl_tensor
+    v_capsule = torch.to_dlpack(v)
+    dlv = DLMatrix{Float64}(v_capsule)
+    # We can only wrap once
+    @test_throws ArgumentError DLMatrix{Float64}(v_capsule)
 
+    tensor = dlv.manager.dl_tensor
     @test tensor.ndim == 2 == ndims(dlv)
     @test tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(dlv)]
 
