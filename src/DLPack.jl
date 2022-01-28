@@ -211,6 +211,10 @@ function __init__()
         include("pycall.jl")
     end
 
+    @require PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d" begin
+        include("pythoncall.jl")
+    end
+
 end
 
 

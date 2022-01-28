@@ -1,0 +1,6 @@
+channels = ["conda-forge", "pytorch"]
+
+[deps]
+cpuonly = ""
+pytorch = "<1.10.2"
+jax = ""
