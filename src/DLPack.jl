@@ -14,8 +14,6 @@ export DLArray, DLVector, DLMatrix, RowMajor, ColMajor
 
 ##  Aliases and constants  ##
 
-ArrayOrCuArrayT{T, N} = Union{Type{Array{T, N}}, Type{CuArray{T, N}}}
-
 const PYCAPSULE_NAME = Ref(
     (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 )
@@ -98,54 +96,54 @@ struct ColMajor <: MemoryLayout end
 struct RowMajor <: MemoryLayout end
 
 struct DLManager{T, N}
-    tensor::DLManagedTensor
+    manager::DLManagedTensor
 
-    function DLManager(tensor::DLManagedTensor)
-        T = dtypes_to_jltypes()[tensor.dl_tensor.dtype]
-        N = Int(tensor.dl_tensor.ndim)
-        return new{T, N}(tensor)
+    function DLManager(manager::DLManagedTensor)
+        T = dtypes_to_jltypes()[manager.dl_tensor.dtype]
+        N = Int(manager.dl_tensor.ndim)
+        return new{T, N}(manager)
     end
 
-    function DLManager{T, N}(tensor::DLManagedTensor) where {T, N}
-        dlt = tensor.dl_tensor
+    function DLManager{T, N}(manager::DLManagedTensor) where {T, N}
+        dlt = manager.dl_tensor
         if N != (n = dlt.ndim)
             throw(ArgumentError("Dimensionality mismatch, object ndims is $n"))
         elseif jltypes_to_dtypes()[T] !== (D = dlt.dtype)
             throw(ArgumentError("Type mismatch, object dtype is $D"))
         end
-        return new{T, N}(tensor)
+        return new{T, N}(manager)
     end
 end
 
-struct DLArray{T, N, A <: AbstractArray{T, N}, F}
-    manager::DLManager{T, N}
+struct DLArray{T, N, A <: AbstractArray{T, N}, F} <: AbstractArray{T, N}
+    manager::DLManagedTensor
     foreign::F
     data::A
 end
 
-function DLArray(tensor::DLManagedTensor, foreign)
-    manager = DLManager(tensor)
-    dev = device_type(tensor)
+function DLArray(manager::DLManagedTensor, foreign)
+    typed_manager = DLManager(manager)
+    dev = device_type(manager)
     arr = if dev == kDLCPU
-        unsafe_wrap(Array, manager)
+        unsafe_wrap(Array, typed_manager)
     elseif dev == kDLCUDA
-        unsafe_wrap(CuArray, manager)
+        unsafe_wrap(CuArray, typed_manager)
     else
         throw(ArgumentError("Unsupported device"))
     end
-    data = is_col_major(manager) ? arr : reversedims(arr)
+    data = is_col_major(typed_manager) ? arr : reversedims(arr)
     return DLArray(manager, foreign, data)
 end
 
-function DLArray{T, N}(A::TA, ::Type{M}, tensor::DLManagedTensor, foreign) where {
+function DLArray{T, N}(A::TA, ::Type{M}, manager::DLManagedTensor, foreign) where {
     T, N, TA <: Union{Type{Array}, Type{CuArray}}, M <: MemoryLayout
 }
-    col_major = is_col_major(tensor, Val(N))
+    col_major = is_col_major(manager, Val(N))
     if (M === ColMajor && !col_major) || (M === RowMajor && col_major)
         throw(ArgumentError("Memory layout mismatch"))
     end
-    manager = DLManager{T, N}(tensor)
-    data = reversedims_maybe(M, unsafe_wrap(A, manager))
+    typed_manager = DLManager{T, N}(manager)
+    data = reversedims_maybe(M, unsafe_wrap(A, typed_manager))
     return DLArray(manager, foreign, data)
 end
 
@@ -191,28 +189,21 @@ dtypes_to_jltypes() = Dict(
 
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
-device_type(tensor::DLManagedTensor) = device_type(tensor.dl_tensor)
-device_type(manager::DLManager) = device_type(manager.tensor)
+device_type(manager::DLManagedTensor) = device_type(manager.dl_tensor)
+device_type(manager::DLManager) = device_type(manager.manager)
 
-Base.eltype(array::DLArray{T}) where {T} = T
-
-Base.ndims(array::DLArray{T, N}) where {T, N} = N
-
-unsafe_size(manager::DLManager{T, N}) where {T, N} = unsafe_size(manager.tensor, Val(N))
+unsafe_size(manager::DLManager{T, N}) where {T, N} = unsafe_size(manager.manager, Val(N))
 #
-function unsafe_size(tensor::DLManagedTensor, ::Val{N}) where {N}
-    sz = tensor.dl_tensor.shape
+function unsafe_size(manager::DLManagedTensor, ::Val{N}) where {N}
+    sz = manager.dl_tensor.shape
     ptr = Base.unsafe_convert(Ptr{NTuple{N, Int64}}, sz)
     return unsafe_load(ptr)
 end
 
-Base.size(array::DLArray) = size(array.data)
-Base.size(array::DLArray, d::Integer) = size(array.data, d)
-
-function unsafe_strides(tensor::DLManagedTensor, val::Val{N}) where {N}
-    st = tensor.dl_tensor.strides
+function unsafe_strides(manager::DLManagedTensor, val::Val{N}) where {N}
+    st = manager.dl_tensor.strides
     if st == C_NULL
-        trailing_size = Base.rest(unsafe_size(tensor, val), 2)
+        trailing_size = Base.rest(unsafe_size(manager, val), 2)
         tup = ((reverse ∘ cumprod ∘ reverse)(trailing_size)..., 1)
         return NTuple{N, Int64}(tup)
     end
@@ -220,15 +211,13 @@ function unsafe_strides(tensor::DLManagedTensor, val::Val{N}) where {N}
     return unsafe_load(ptr)
 end
 
-Base.strides(a::DLArray) = strides(a.data)
-
 byte_offset(tensor::DLTensor) = Int(tensor.byte_offset)
-byte_offset(tensor::DLManagedTensor) = byte_offset(tensor.dl_tensor)
-byte_offset(manager::DLManager) = byte_offset(manager.tensor)
+byte_offset(manager::DLManagedTensor) = byte_offset(manager.dl_tensor)
+byte_offset(manager::DLManager) = byte_offset(manager.manager)
 
 Base.pointer(tensor::DLTensor) = tensor.data
-Base.pointer(tensor::DLManagedTensor) = pointer(tensor.dl_tensor)
-Base.pointer(manager::DLManager) = pointer(manager.tensor)
+Base.pointer(manager::DLManagedTensor) = pointer(manager.dl_tensor)
+Base.pointer(manager::DLManager) = pointer(manager.manager)
 
 function Base.unsafe_wrap(::Type{Array}, manager::DLManager{T}) where {T}
     if device_type(manager) == kDLCPU
@@ -249,12 +238,12 @@ function Base.unsafe_wrap(::Type{CuArray}, manager::DLManager{T}) where {T}
 end
 
 function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
-    return is_col_major(manager.tensor, Val(N))
+    return is_col_major(manager.manager, Val(N))
 end
 #
-function is_col_major(tensor::DLManagedTensor, val::Val{N})::Bool where {N}
-    sz = unsafe_size(tensor, val)
-    st = unsafe_strides(tensor, val)
+function is_col_major(manager::DLManagedTensor, val::Val{N})::Bool where {N}
+    sz = unsafe_size(manager, val)
+    st = unsafe_strides(manager, val)
     return N == 0 || prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
 end
 
@@ -268,6 +257,27 @@ end
 function revdimstype(a::A) where {T, N, A <: AbstractArray{T, N}}
     P = ntuple(i -> N + 1 - i, Val(N))
     return PermutedDimsArray{T, N, P, P, A}
+end
+
+##  Array Interface  ##
+
+Base.size(A::DLArray) = size(A.data)
+Base.size(A::DLArray, d::Integer) = size(A.data, d)
+
+Base.@propagate_inbounds Base.getindex(A::DLArray, I...) = getindex(A.data, I...)
+
+Base.@propagate_inbounds Base.setindex!(A::DLArray, v, I...) = setindex!(A.data, v, I...)
+
+Base.strides(a::DLArray) = strides(a.data)
+
+function Base.unsafe_convert(::Type{Ptr{T}}, A::DLArray) where {T}
+    return Base.unsafe_convert(Ptr{T}, A.data)
+end
+
+Base.elsize(::Type{D}) where {T, N, A, D <: DLArray{T, N, A}} = Base.elsize(A)
+
+function Base.Broadcast.BroadcastStyle(::Type{D}) where {T, N, A, D <: DLArray{T, N, A}}
+    return Base.Broadcast.BroadcastStyle(A)
 end
 
 
