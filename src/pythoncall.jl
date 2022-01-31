@@ -54,5 +54,8 @@ let
 
 end
 
-DLArray(po::PythonCall.Py) = DLArray(DLManagedTensor(po))
-DLArray{T, N}(po::PythonCall.Py) where {T, N} = DLArray{T, N}(DLManagedTensor(po))
+DLArray(o::PythonCall.Py, to_dlpack) = DLArray(DLManagedTensor(to_dlpack(o)), o)
+#
+function DLArray{T, N}(::Type{A}, ::Type{M}, o::PythonCall.Py, to_dlpack) where {T, N, A, M}
+    return DLArray{T, N}(A, M, DLManagedTensor(to_dlpack(o)), o)
+end

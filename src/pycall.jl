@@ -36,5 +36,8 @@ function DLManagedTensor(po::PyObject)
     return tensor
 end
 
-DLArray(po::PyObject) = DLArray(DLManagedTensor(po))
-DLArray{T, N}(po::PyObject) where {T, N} = DLArray{T, N}(DLManagedTensor(po))
+DLArray(o::PyObject, to_dlpack) = DLArray(DLManagedTensor(to_dlpack(o)), o)
+#
+function DLArray{T, N}(::Type{A}, ::Type{M}, o::PyObject, to_dlpack) where {T, N, A, M}
+    return DLArray{T, N}(A, M, DLManagedTensor(to_dlpack(o)), o)
+end
