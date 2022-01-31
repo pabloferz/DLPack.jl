@@ -33,7 +33,7 @@ jax.config.update("jax_enable_x64", true)
     if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
         dlv.data[1] = 0  # mutate a jax's tensor
         @inferred DLVector{Float32}(Array, ColMajor, v, to_dlpack)
-    elseif DLPack.device_type(opaque_tensor) == DLPack.kDLGPU
+    elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
         dlv.data[1:1] .= 0  # mutate a jax's tensor
         @inferred DLVector{Float32}(CuArray, ColMajor, v, to_dlpack)
     end
