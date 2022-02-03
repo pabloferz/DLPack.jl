@@ -3,7 +3,6 @@ module DLPack
 
 ##  Dependencies  ##
 
-using CUDA
 using Requires
 
 
@@ -123,20 +122,14 @@ end
 
 function DLArray(manager::DLManagedTensor, foreign)
     typed_manager = DLManager(manager)
-    dev = device_type(manager)
-    arr = if dev == kDLCPU
-        unsafe_wrap(Array, typed_manager)
-    elseif dev == kDLCUDA
-        unsafe_wrap(CuArray, typed_manager)
-    else
-        throw(ArgumentError("Unsupported device"))
-    end
+    A = jlarray_type(Val(device_type(manager)))
+    arr = unsafe_wrap(A, typed_manager)
     data = is_col_major(typed_manager) ? arr : reversedims(arr)
     return DLArray(manager, foreign, data)
 end
 
-function DLArray{T, N}(A::TA, ::Type{M}, manager::DLManagedTensor, foreign) where {
-    T, N, TA <: Union{Type{Array}, Type{CuArray}}, M <: MemoryLayout
+function DLArray{T, N}(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+    T, N, A, M <: MemoryLayout
 }
     col_major = is_col_major(manager, Val(N))
     if (M === ColMajor && !col_major) || (M === RowMajor && col_major)
@@ -187,6 +180,16 @@ dtypes_to_jltypes() = Dict(
     DLDataType(kDLComplex, 128, 1) => ComplexF64,
 )
 
+jlarray_type(::Val{kDLCPU}) = Array
+#
+function jlarray_type(::Val{D}) where {D}
+    if D in (kDLCUDA, kDLCUDAHost, kDLCUDAManaged)
+        throw("CUDA package is not loaded")
+    else
+        throw("Unsupported device")
+    end
+end
+
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
 device_type(manager::DLManagedTensor) = device_type(manager.dl_tensor)
@@ -226,15 +229,6 @@ function Base.unsafe_wrap(::Type{Array}, manager::DLManager{T}) where {T}
         return GC.@preserve manager unsafe_wrap(Array, Ptr{T}(addr), sz)
     end
     throw(ArgumentError("Only CPU arrays can be wrapped with Array"))
-end
-#
-function Base.unsafe_wrap(::Type{CuArray}, manager::DLManager{T}) where {T}
-    if device_type(manager) == kDLCUDA
-        addr = Int(pointer(manager))
-        sz = unsafe_size(manager)
-        return GC.@preserve manager unsafe_wrap(CuArray, CuPtr{T}(addr), sz)
-    end
-    throw(ArgumentError("Only CUDA arrays can be wrapped with CuArray"))
 end
 
 function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
@@ -284,6 +278,10 @@ end
 ##  Module initialization  ##
 
 function __init__()
+
+    @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
+        include("cuda.jl")
+    end
 
     @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
         include("pycall.jl")
