@@ -11,16 +11,6 @@ using Requires
 export DLArray, DLVector, DLMatrix, RowMajor, ColMajor
 
 
-##  Aliases and constants  ##
-
-const PYCAPSULE_NAME = Ref(
-    (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
-)
-const USED_PYCAPSULE_NAME = Ref(
-    (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
-)
-
-
 ##  Types  ##
 
 @enum DLDeviceType::Cint begin
@@ -77,6 +67,12 @@ mutable struct DLManagedTensor
     manager_ctx::Ptr{Cvoid}
     deleter::Ptr{Cvoid}
 
+    function DLManagedTensor(
+        dl_tensor::DLTensor, manager_ctx::Ptr{Cvoid}, deleter::Ptr{Cvoid}
+    )
+        return new(dl_tensor, manager_ctx, deleter)
+    end
+
     function DLManagedTensor(dlptr::Ptr{DLManagedTensor})
         manager = unsafe_load(dlptr)
 
@@ -87,6 +83,32 @@ mutable struct DLManagedTensor
 
         return manager
     end
+end
+
+struct Capsule
+    tensor::Ref{DLManagedTensor}
+    shape::Vector{Clonglong}
+    strides::Vector{Clonglong}
+end
+
+share(A::StridedArray) = unsafe_share(A)
+
+function unsafe_share(A::AbstractArray{T, N}) where {T, N}
+    sh = Clonglong[(reverse ∘ size)(A)...]
+    st = Clonglong[(reverse ∘ strides)(A)...]
+
+    # This should work for Ptr and CuPtr
+    data = Ptr{Cvoid}(UInt(pointer(A)))
+    ctx = dldevice(A)
+    ndim = Cint(N)
+    dtype = jltypes_to_dtypes()[T]
+    sh_ptr = pointer(sh)
+    st_ptr = pointer(st)
+    dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(0))
+
+    tensor = Ref(DLManagedTensor(dl_tensor, C_NULL, C_NULL))
+
+    return Capsule(tensor, sh, st)
 end
 
 abstract type MemoryLayout end
@@ -115,17 +137,18 @@ struct DLManager{T, N}
 end
 
 struct DLArray{T, N, A <: AbstractArray{T, N}, F} <: AbstractArray{T, N}
-    manager::DLManagedTensor
     foreign::F
     data::A
 end
 
 function DLArray(manager::DLManagedTensor, foreign)
-    typed_manager = DLManager(manager)
-    A = jlarray_type(Val(device_type(manager)))
-    arr = unsafe_wrap(A, typed_manager)
-    data = is_col_major(typed_manager) ? arr : reversedims(arr)
-    return DLArray(manager, foreign, data)
+    GC.@preserve manager begin
+        typed_manager = DLManager(manager)
+        A = jlarray_type(Val(device_type(manager)))
+        arr = unsafe_wrap(A, typed_manager)
+        data = is_col_major(typed_manager) ? arr : reversedims(arr)
+    end
+    return DLArray(foreign, data)
 end
 
 function DLArray{T, N}(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
@@ -137,11 +160,22 @@ function DLArray{T, N}(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) 
     end
     typed_manager = DLManager{T, N}(manager)
     data = reversedims_maybe(M, unsafe_wrap(A, typed_manager))
-    return DLArray(manager, foreign, data)
+    return DLArray(foreign, data)
 end
+
+
+##  Aliases and constants  ##
 
 const DLVector{T} = DLArray{T, 1}
 const DLMatrix{T} = DLArray{T, 2}
+
+const PYCAPSULE_NAME = Ref(
+    (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
+)
+
+const USED_PYCAPSULE_NAME = Ref(
+    (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
+)
 
 
 ##  Utils  ##
@@ -190,6 +224,8 @@ function jlarray_type(::Val{D}) where {D}
     end
 end
 
+dldevice(::StridedArray) = DLDevice(kDLCPU, Cint(0))
+
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
 device_type(manager::DLManagedTensor) = device_type(manager.dl_tensor)
@@ -206,8 +242,8 @@ end
 function unsafe_strides(manager::DLManagedTensor, val::Val{N}) where {N}
     st = manager.dl_tensor.strides
     if st == C_NULL
-        trailing_size = Base.rest(unsafe_size(manager, val), 2)
-        tup = ((reverse ∘ cumprod ∘ reverse)(trailing_size)..., 1)
+        sz = unsafe_size(manager, val)
+        tup = ((reverse ∘ cumprod ∘ reverse ∘ Base.tail)(sz)..., 1)
         return NTuple{N, Int64}(tup)
     end
     ptr = Base.unsafe_convert(Ptr{NTuple{N, Int64}}, st)
@@ -226,7 +262,7 @@ function Base.unsafe_wrap(::Type{Array}, manager::DLManager{T}) where {T}
     if device_type(manager) == kDLCPU
         addr = Int(pointer(manager))
         sz = unsafe_size(manager)
-        return GC.@preserve manager unsafe_wrap(Array, Ptr{T}(addr), sz)
+        return unsafe_wrap(Array, Ptr{T}(addr), sz)
     end
     throw(ArgumentError("Only CPU arrays can be wrapped with Array"))
 end
