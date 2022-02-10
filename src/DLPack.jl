@@ -176,6 +176,8 @@ const USED_PYCAPSULE_NAME = Ref(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 )
 
+# We held references to the arrays that will be shared to python libraries, and the
+# `deleter` in each `DLManagedTensor` will release them.
 const DLPACK_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
 
 

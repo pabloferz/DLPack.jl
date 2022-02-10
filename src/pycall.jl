@@ -1,8 +1,7 @@
 using .PyCall
 
 
-# We define a noop deleter to pass to new `DLManagedTensor`s exported to python libraries
-# as some of them (e.g. PyTorch) do not handle the case when the finalizer is `C_NULL`.
+# This will be used to release the `DLManagedTensor`s and associated array.
 const PYCALL_DLPACK_DELETER = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
 
