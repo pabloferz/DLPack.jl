@@ -50,7 +50,9 @@ function DLArray{T, N}(::Type{A}, ::Type{M}, o::PyObject, to_dlpack) where {T, N
     return DLArray{T, N}(A, M, DLManagedTensor(to_dlpack(o)), o)
 end
 
-function share(A::StridedArray, from_dlpack::Union{PyObject, Function})
+share(A::StridedArray, from_dlpack::PyObject) = share(A, PyObject, from_dlpack)
+#
+function share(A::StridedArray, ::Type{PyObject}, from_dlpack)
     capsule = share(A)
     tensor = capsule.tensor
     tensor_ptr = pointer_from_objref(tensor)
