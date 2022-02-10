@@ -3,8 +3,7 @@ using .PyCall
 
 # We define a noop deleter to pass to new `DLManagedTensor`s exported to python libraries
 # as some of them (e.g. PyTorch) do not handle the case when the finalizer is `C_NULL`.
-# Also, we have to define this here whithin `__init__`.
-const PYCALL_NOOP_DELETER = @cfunction(ptr -> nothing, Cvoid, (Ptr{DLManagedTensor},))
+const PYCALL_DLPACK_DELETER = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
 
 function DLManagedTensor(po::PyObject)
@@ -54,19 +53,19 @@ end
 function share(A::StridedArray, from_dlpack::Union{PyObject, Function})
     capsule = share(A)
     tensor = capsule.tensor
-    tensor[].deleter = PYCALL_NOOP_DELETER
-
-    o = GC.@preserve capsule begin
-        pycapsule = PyObject(PyCall.@pycheck ccall(
-            (@pysym :PyCapsule_New),
-            PyPtr, (Ptr{Cvoid}, Ptr{UInt8}, Ptr{Cvoid}),
-            tensor, PYCAPSULE_NAME, C_NULL
-        ))
-        from_dlpack(pycapsule)
-    end
+    tensor_ptr = pointer_from_objref(tensor)
 
     # Prevent `A` and `tensor` from being `gc`ed while `o` is around.
     # For certain DLPack-compatible libraries, e.g. PyTorch, the tensor is
     # captured and the `deleter` referenced from it.
-    return PyCall.pyembed(o, Ref((tensor[], A)))
+    DLPACK_POOL[tensor_ptr] = (capsule, A)
+    tensor.deleter = PYCALL_DLPACK_DELETER
+
+    pycapsule = PyObject(PyCall.@pycheck ccall(
+        (@pysym :PyCapsule_New),
+        PyPtr, (Ptr{Cvoid}, Ptr{UInt8}, Ptr{Cvoid}),
+        tensor_ptr, PYCAPSULE_NAME, C_NULL
+    ))
+
+    return from_dlpack(pycapsule)
 end

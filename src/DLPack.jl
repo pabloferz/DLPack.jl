@@ -86,7 +86,7 @@ mutable struct DLManagedTensor
 end
 
 struct Capsule
-    tensor::Ref{DLManagedTensor}
+    tensor::DLManagedTensor
     shape::Vector{Clonglong}
     strides::Vector{Clonglong}
 end
@@ -105,8 +105,7 @@ function unsafe_share(A::AbstractArray{T, N}) where {T, N}
     sh_ptr = pointer(sh)
     st_ptr = pointer(st)
     dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(0))
-
-    tensor = Ref(DLManagedTensor(dl_tensor, C_NULL, C_NULL))
+    tensor = DLManagedTensor(dl_tensor, C_NULL, C_NULL)
 
     return Capsule(tensor, sh, st)
 end
@@ -176,6 +175,8 @@ const PYCAPSULE_NAME = Ref(
 const USED_PYCAPSULE_NAME = Ref(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 )
+
+const DLPACK_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
 
 
 ##  Utils  ##
@@ -288,6 +289,12 @@ function revdimstype(a::A) where {T, N, A <: AbstractArray{T, N}}
     P = ntuple(i -> N + 1 - i, Val(N))
     return PermutedDimsArray{T, N, P, P, A}
 end
+
+function release(ptr)
+    delete!(DLPACK_POOL, ptr)
+    return nothing
+end
+
 
 ##  Array Interface  ##
 
