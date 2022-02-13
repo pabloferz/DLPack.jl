@@ -91,25 +91,6 @@ struct Capsule
     strides::Vector{Clonglong}
 end
 
-share(A::StridedArray) = unsafe_share(A)
-
-function unsafe_share(A::AbstractArray{T, N}) where {T, N}
-    sh = Clonglong[(reverse ∘ size)(A)...]
-    st = Clonglong[(reverse ∘ strides)(A)...]
-
-    # This should work for Ptr and CuPtr
-    data = Ptr{Cvoid}(UInt(pointer(A)))
-    ctx = dldevice(A)
-    ndim = Cint(N)
-    dtype = jltypes_to_dtypes()[T]
-    sh_ptr = pointer(sh)
-    st_ptr = pointer(st)
-    dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(0))
-    tensor = DLManagedTensor(dl_tensor, C_NULL, C_NULL)
-
-    return Capsule(tensor, sh, st)
-end
-
 abstract type MemoryLayout end
 
 struct ColMajor <: MemoryLayout end
@@ -176,9 +157,63 @@ const USED_PYCAPSULE_NAME = Ref(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 )
 
+const WRAPS_POOL = IdDict{WeakRef, Any}()
+
 # We held references to the arrays that will be shared to python libraries, and the
 # `deleter` in each `DLManagedTensor` will release them.
-const DLPACK_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
+const SHARES_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
+
+
+##  Wrapping and sharing  ##
+
+function wrap(manager::DLManagedTensor, foreign)
+    GC.@preserve manager begin
+        typed_manager = DLManager(manager)
+        A = jlarray_type(Val(device_type(manager)))
+        M = is_col_major(typed_manager) ? ColMajor : RowMajor
+        array = reshape_me_maybe(M, unsafe_wrap(A, typed_manager))
+    end
+    wkref = WeakRef(array)
+    WRAPS_POOL[wkref] = foreign
+    finalizer(_ -> delete!(WRAPS_POOL, wkref), array)
+    return array
+end
+
+function wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+    T, N, A <: AbstractArray{T, N}, M <: MemoryLayout
+}
+    col_major = is_col_major(manager, Val(N))
+    if (M === ColMajor && !col_major) || (M === RowMajor && col_major)
+        throw(ArgumentError("Memory layout mismatch"))
+    end
+    GC.@preserve manager begin
+        typed_manager = DLManager{T, N}(manager)
+        array = reshape_me_maybe(M, unsafe_wrap(A, typed_manager))
+    end
+    wkref = WeakRef(array)
+    WRAPS_POOL[wkref] = foreign
+    finalizer(_ -> delete!(WRAPS_POOL, wkref), array)
+    return array
+end
+
+share(A::StridedArray) = unsafe_share(A)
+
+function unsafe_share(A::AbstractArray{T, N}) where {T, N}
+    sh = Clonglong[(reverse ∘ size)(A)...]
+    st = Clonglong[(reverse ∘ strides)(A)...]
+
+    # This should work for Ptr and CuPtr
+    data = Ptr{Cvoid}(UInt(pointer(A)))
+    ctx = dldevice(A)
+    ndim = Cint(N)
+    dtype = jltypes_to_dtypes()[T]
+    sh_ptr = pointer(sh)
+    st_ptr = pointer(st)
+    dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(0))
+    tensor = DLManagedTensor(dl_tensor, C_NULL, C_NULL)
+
+    return Capsule(tensor, sh, st)
+end
 
 
 ##  Utils  ##
@@ -261,7 +296,7 @@ Base.pointer(tensor::DLTensor) = tensor.data
 Base.pointer(manager::DLManagedTensor) = pointer(manager.dl_tensor)
 Base.pointer(manager::DLManager) = pointer(manager.manager)
 
-function Base.unsafe_wrap(::Type{Array}, manager::DLManager{T}) where {T}
+function Base.unsafe_wrap(::Type{<: Array}, manager::DLManager{T}) where {T}
     if device_type(manager) == kDLCPU
         addr = Int(pointer(manager))
         sz = unsafe_size(manager)
@@ -280,6 +315,9 @@ function is_col_major(manager::DLManagedTensor, val::Val{N})::Bool where {N}
     return N == 0 || prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
 end
 
+reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
+reshape_me_maybe(::Type{ColMajor}, array) = array
+
 reversedims_maybe(::Type{RowMajor}, array) = reversedims(array)
 reversedims_maybe(::Type{ColMajor}, array) = array
 
@@ -293,7 +331,7 @@ function revdimstype(a::A) where {T, N, A <: AbstractArray{T, N}}
 end
 
 function release(ptr)
-    delete!(DLPACK_POOL, ptr)
+    delete!(SHARES_POOL, ptr)
     return nothing
 end
 

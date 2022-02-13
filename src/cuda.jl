@@ -19,7 +19,7 @@ function dldevice(B::CUDA.StridedCuArray)
     return DLDevice(dldt, CUDA.device(A))
 end
 
-function Base.unsafe_wrap(::Type{CUDA.CuArray}, manager::DLManager{T}) where {T}
+function Base.unsafe_wrap(::Type{<: CUDA.CuArray}, manager::DLManager{T}) where {T}
     if device_type(manager) == kDLCUDA
         addr = Int(pointer(manager))
         sz = unsafe_size(manager)

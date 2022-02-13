@@ -6,7 +6,7 @@ const PYCALL_DLPACK_DELETER = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
 
 function DLManagedTensor(po::PyObject)
-    if !pyisinstance(po, PyCall.@pyglobalobj(:PyCapsule_Type))
+    if !PyCall.pyisinstance(po, PyCall.@pyglobalobj(:PyCapsule_Type))
         throw(ArgumentError("PyObject must be a PyCapsule"))
     end
 
@@ -49,6 +49,16 @@ function DLArray{T, N}(::Type{A}, ::Type{M}, o::PyObject, to_dlpack) where {T, N
     return DLArray{T, N}(A, M, DLManagedTensor(to_dlpack(o)), o)
 end
 
+function wrap(o::PyObject, to_dlpack::Union{PyObject, Function})
+    return wrap(DLManagedTensor(to_dlpack(o)), o)
+end
+#
+function wrap(::Type{A}, ::Type{M}, o::PyObject, to_dlpack) where {
+    T, N, A <: AbstractArray{T, N}, M
+}
+    return wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
+end
+
 share(A::StridedArray, from_dlpack::PyObject) = share(A, PyObject, from_dlpack)
 #
 function share(A::StridedArray, ::Type{PyObject}, from_dlpack)
@@ -59,7 +69,7 @@ function share(A::StridedArray, ::Type{PyObject}, from_dlpack)
     # Prevent `A` and `tensor` from being `gc`ed while `o` is around.
     # For certain DLPack-compatible libraries, e.g. PyTorch, the tensor is
     # captured and the `deleter` referenced from it.
-    DLPACK_POOL[tensor_ptr] = (capsule, A)
+    SHARES_POOL[tensor_ptr] = (capsule, A)
     tensor.deleter = PYCALL_DLPACK_DELETER
 
     pycapsule = PyObject(PyCall.@pycheck ccall(

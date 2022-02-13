@@ -69,7 +69,7 @@ let
         # Prevent `A` and `tensor` from being `gc`ed while `o` is around.
         # For certain DLPack-compatible libraries, e.g. PyTorch, the tensor is
         # captured and the `deleter` referenced from it.
-        DLPACK_POOL[tensor_ptr] = (capsule, A)
+        SHARES_POOL[tensor_ptr] = (capsule, A)
         tensor.deleter = PYTHONCALL_DLPACK_DELETER
 
         pycapsule = PythonCall.pynew(ccall(
@@ -83,8 +83,6 @@ let
 
 end
 
-share(A::StridedArray, from_dlpack::Py) = share(A, Py, from_dlpack)
-
 function DLArray(o::Py, to_dlpack::Union{Py, Function})
     return DLArray(DLManagedTensor(to_dlpack(o)), o)
 end
@@ -92,3 +90,15 @@ end
 function DLArray{T, N}(::Type{A}, ::Type{M}, o::Py, to_dlpack) where {T, N, A, M}
     return DLArray{T, N}(A, M, DLManagedTensor(to_dlpack(o)), o)
 end
+
+function wrap(o::Py, to_dlpack::Union{Py, Function})
+    return wrap(DLManagedTensor(to_dlpack(o)), o)
+end
+#
+function wrap(::Type{A}, ::Type{M}, o::Py, to_dlpack) where {
+    T, N, A <: AbstractArray{T, N}, M
+}
+    return wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
+end
+
+share(A::StridedArray, from_dlpack::Py) = share(A, Py, from_dlpack)
