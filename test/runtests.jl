@@ -35,6 +35,7 @@ jax.config.update("jax_enable_x64", true)
 
         if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
             jv[1] = 0  # mutate a jax's tensor
+            @inferred DLPack.wrap(Vector{Float32}, ColMajor, v, to_dlpack)
         elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
             jv[1:1] .= 0  # mutate a jax's tensor
         end
@@ -51,6 +52,7 @@ jax.config.update("jax_enable_x64", true)
 
         if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
             @test jw[1, 2] == 3  # dimensions are reversed
+            @inferred DLPack.wrap(Matrix{Int64}, RowMajor, w, to_dlpack)
         elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
             @test all(view(dlw, 1, 2) .== 3)  # dimensions are reversed
         end
