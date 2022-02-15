@@ -3,23 +3,12 @@ module DLPack
 
 ##  Dependencies  ##
 
-using CUDA
 using Requires
 
 
 ##  Exports  ##
 
-export DLArray, DLVector, DLMatrix, RowMajor, ColMajor
-
-
-##  Aliases and constants  ##
-
-const PYCAPSULE_NAME = Ref(
-    (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
-)
-const USED_PYCAPSULE_NAME = Ref(
-    (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
-)
+export RowMajor, ColMajor
 
 
 ##  Types  ##
@@ -78,6 +67,12 @@ mutable struct DLManagedTensor
     manager_ctx::Ptr{Cvoid}
     deleter::Ptr{Cvoid}
 
+    function DLManagedTensor(
+        dl_tensor::DLTensor, manager_ctx::Ptr{Cvoid}, deleter::Ptr{Cvoid}
+    )
+        return new(dl_tensor, manager_ctx, deleter)
+    end
+
     function DLManagedTensor(dlptr::Ptr{DLManagedTensor})
         manager = unsafe_load(dlptr)
 
@@ -88,6 +83,12 @@ mutable struct DLManagedTensor
 
         return manager
     end
+end
+
+struct Capsule
+    tensor::DLManagedTensor
+    shape::Vector{Clonglong}
+    strides::Vector{Clonglong}
 end
 
 abstract type MemoryLayout end
@@ -115,40 +116,73 @@ struct DLManager{T, N}
     end
 end
 
-struct DLArray{T, N, A <: AbstractArray{T, N}, F} <: AbstractArray{T, N}
-    manager::DLManagedTensor
-    foreign::F
-    data::A
-end
+##  Aliases and constants  ##
 
-function DLArray(manager::DLManagedTensor, foreign)
-    typed_manager = DLManager(manager)
-    dev = device_type(manager)
-    arr = if dev == kDLCPU
-        unsafe_wrap(Array, typed_manager)
-    elseif dev == kDLCUDA
-        unsafe_wrap(CuArray, typed_manager)
-    else
-        throw(ArgumentError("Unsupported device"))
+const PYCAPSULE_NAME = Ref(
+    (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
+)
+
+const USED_PYCAPSULE_NAME = Ref(
+    (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
+)
+
+const WRAPS_POOL = IdDict{WeakRef, Any}()
+
+# We held references to the arrays that will be shared to python libraries, and the
+# `deleter` in each `DLManagedTensor` will release them.
+const SHARES_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
+
+
+##  Wrapping and sharing  ##
+
+function wrap(manager::DLManagedTensor, foreign)
+    GC.@preserve manager begin
+        typed_manager = DLManager(manager)
+        A = jlarray_type(Val(device_type(manager)))
+        M = is_col_major(typed_manager) ? ColMajor : RowMajor
+        array = reshape_me_maybe(M, unsafe_wrap(A, typed_manager))
     end
-    data = is_col_major(typed_manager) ? arr : reversedims(arr)
-    return DLArray(manager, foreign, data)
+    wkref = WeakRef(array)
+    WRAPS_POOL[wkref] = foreign
+    finalizer(_ -> delete!(WRAPS_POOL, wkref), array)
+    return array
 end
 
-function DLArray{T, N}(A::TA, ::Type{M}, manager::DLManagedTensor, foreign) where {
-    T, N, TA <: Union{Type{Array}, Type{CuArray}}, M <: MemoryLayout
+function wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+    T, N, A <: AbstractArray{T, N}, M <: MemoryLayout
 }
     col_major = is_col_major(manager, Val(N))
     if (M === ColMajor && !col_major) || (M === RowMajor && col_major)
         throw(ArgumentError("Memory layout mismatch"))
     end
-    typed_manager = DLManager{T, N}(manager)
-    data = reversedims_maybe(M, unsafe_wrap(A, typed_manager))
-    return DLArray(manager, foreign, data)
+    GC.@preserve manager begin
+        typed_manager = DLManager{T, N}(manager)
+        array = reshape_me_maybe(M, unsafe_wrap(A, typed_manager))
+    end
+    wkref = WeakRef(array)
+    WRAPS_POOL[wkref] = foreign
+    finalizer(_ -> delete!(WRAPS_POOL, wkref), array)
+    return array
 end
 
-const DLVector{T} = DLArray{T, 1}
-const DLMatrix{T} = DLArray{T, 2}
+share(A::StridedArray) = unsafe_share(A)
+
+function unsafe_share(A::AbstractArray{T, N}) where {T, N}
+    sh = Clonglong[(reverse ∘ size)(A)...]
+    st = Clonglong[(reverse ∘ strides)(A)...]
+
+    # This should work for Ptr and CuPtr
+    data = Ptr{Cvoid}(UInt(pointer(A)))
+    ctx = dldevice(A)
+    ndim = Cint(N)
+    dtype = jltypes_to_dtypes()[T]
+    sh_ptr = pointer(sh)
+    st_ptr = pointer(st)
+    dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(0))
+    tensor = DLManagedTensor(dl_tensor, C_NULL, C_NULL)
+
+    return Capsule(tensor, sh, st)
+end
 
 
 ##  Utils  ##
@@ -187,6 +221,18 @@ dtypes_to_jltypes() = Dict(
     DLDataType(kDLComplex, 128, 1) => ComplexF64,
 )
 
+jlarray_type(::Val{kDLCPU}) = Array
+#
+function jlarray_type(::Val{D}) where {D}
+    if D in (kDLCUDA, kDLCUDAHost, kDLCUDAManaged)
+        throw("CUDA package is not loaded")
+    else
+        throw("Unsupported device")
+    end
+end
+
+dldevice(::StridedArray) = DLDevice(kDLCPU, Cint(0))
+
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
 device_type(manager::DLManagedTensor) = device_type(manager.dl_tensor)
@@ -203,8 +249,8 @@ end
 function unsafe_strides(manager::DLManagedTensor, val::Val{N}) where {N}
     st = manager.dl_tensor.strides
     if st == C_NULL
-        trailing_size = Base.rest(unsafe_size(manager, val), 2)
-        tup = ((reverse ∘ cumprod ∘ reverse)(trailing_size)..., 1)
+        sz = unsafe_size(manager, val)
+        tup = ((reverse ∘ cumprod ∘ reverse ∘ Base.tail)(sz)..., 1)
         return NTuple{N, Int64}(tup)
     end
     ptr = Base.unsafe_convert(Ptr{NTuple{N, Int64}}, st)
@@ -219,22 +265,13 @@ Base.pointer(tensor::DLTensor) = tensor.data
 Base.pointer(manager::DLManagedTensor) = pointer(manager.dl_tensor)
 Base.pointer(manager::DLManager) = pointer(manager.manager)
 
-function Base.unsafe_wrap(::Type{Array}, manager::DLManager{T}) where {T}
+function Base.unsafe_wrap(::Type{<: Array}, manager::DLManager{T}) where {T}
     if device_type(manager) == kDLCPU
         addr = Int(pointer(manager))
         sz = unsafe_size(manager)
-        return GC.@preserve manager unsafe_wrap(Array, Ptr{T}(addr), sz)
+        return unsafe_wrap(Array, Ptr{T}(addr), sz)
     end
     throw(ArgumentError("Only CPU arrays can be wrapped with Array"))
-end
-#
-function Base.unsafe_wrap(::Type{CuArray}, manager::DLManager{T}) where {T}
-    if device_type(manager) == kDLCUDA
-        addr = Int(pointer(manager))
-        sz = unsafe_size(manager)
-        return GC.@preserve manager unsafe_wrap(CuArray, CuPtr{T}(addr), sz)
-    end
-    throw(ArgumentError("Only CUDA arrays can be wrapped with CuArray"))
 end
 
 function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
@@ -246,6 +283,9 @@ function is_col_major(manager::DLManagedTensor, val::Val{N})::Bool where {N}
     st = unsafe_strides(manager, val)
     return N == 0 || prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
 end
+
+reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
+reshape_me_maybe(::Type{ColMajor}, array) = array
 
 reversedims_maybe(::Type{RowMajor}, array) = reversedims(array)
 reversedims_maybe(::Type{ColMajor}, array) = array
@@ -259,31 +299,19 @@ function revdimstype(a::A) where {T, N, A <: AbstractArray{T, N}}
     return PermutedDimsArray{T, N, P, P, A}
 end
 
-##  Array Interface  ##
-
-Base.size(A::DLArray) = size(A.data)
-Base.size(A::DLArray, d::Integer) = size(A.data, d)
-
-Base.@propagate_inbounds Base.getindex(A::DLArray, I...) = getindex(A.data, I...)
-
-Base.@propagate_inbounds Base.setindex!(A::DLArray, v, I...) = setindex!(A.data, v, I...)
-
-Base.strides(a::DLArray) = strides(a.data)
-
-function Base.unsafe_convert(::Type{Ptr{T}}, A::DLArray) where {T}
-    return Base.unsafe_convert(Ptr{T}, A.data)
-end
-
-Base.elsize(::Type{D}) where {T, N, A, D <: DLArray{T, N, A}} = Base.elsize(A)
-
-function Base.Broadcast.BroadcastStyle(::Type{D}) where {T, N, A, D <: DLArray{T, N, A}}
-    return Base.Broadcast.BroadcastStyle(A)
+function release(ptr)
+    delete!(SHARES_POOL, ptr)
+    return nothing
 end
 
 
 ##  Module initialization  ##
 
 function __init__()
+
+    @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
+        include("cuda.jl")
+    end
 
     @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
         include("pycall.jl")

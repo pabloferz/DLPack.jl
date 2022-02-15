@@ -21,36 +21,59 @@ jax.config.update("jax_enable_x64", true)
 
 
 @testset "PyCall" begin
-    to_dlpack = o -> @pycall dlpack.to_dlpack(o)::PyObject
 
-    v = np.asarray([1.0, 2.0, 3.0], dtype = np.float32)
-    dlv = DLArray(v, to_dlpack)
-    opaque_tensor = dlv.manager.dl_tensor
+    @testset "wrap" begin
+        to_dlpack = o -> @pycall dlpack.to_dlpack(o)::PyObject
 
-    @test v.ndim == 1 == ndims(dlv)
-    @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(dlv)]
+        v = np.asarray([1.0, 2.0, 3.0], dtype = np.float32)
+        jv = DLPack.wrap(v, to_dlpack)
+        dlv = DLPack.DLManagedTensor(to_dlpack(v))
+        opaque_tensor = dlv.dl_tensor
 
-    if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
-        dlv[1] = 0  # mutate a jax's tensor
-        @inferred DLVector{Float32}(Array, ColMajor, v, to_dlpack)
-    elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
-        dlv[1:1] .= 0  # mutate a jax's tensor
-        @inferred DLVector{Float32}(CuArray, ColMajor, v, to_dlpack)
+        @test v.ndim == 1 == opaque_tensor.ndim
+        @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(jv)]
+
+        if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
+            jv[1] = 0  # mutate a jax's tensor
+            @inferred DLPack.wrap(Vector{Float32}, ColMajor, v, to_dlpack)
+        elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
+            jv[1:1] .= 0  # mutate a jax's tensor
+        end
+
+        @test py"$np.all($v == $np.asarray([0.0, 2.0, 3.0])).item()"
+
+        w = np.asarray([1 2; 3 4], dtype = np.int64)
+        jw = DLPack.wrap(w, to_dlpack)
+        dlw = DLPack.DLManagedTensor(to_dlpack(w))
+        opaque_tensor = dlw.dl_tensor
+
+        @test w.ndim == 2 == opaque_tensor.ndim
+        @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(jw)]
+
+        if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
+            @test jw[1, 2] == 3  # dimensions are reversed
+            @inferred DLPack.wrap(Matrix{Int64}, RowMajor, w, to_dlpack)
+        elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
+            @test all(view(dlw, 1, 2) .== 3)  # dimensions are reversed
+        end
     end
 
-    @test py"$np.all($v[:] == $np.asarray([0.0, 2.0, 3.0])).item()"
+    @testset "share" begin
+        v = UInt[1, 2, 3]
+        pv = DLPack.share(v, dlpack.from_dlpack)
 
-    w = np.asarray([1 2; 3 4], dtype = np.int64)
-    dlw = DLArray(w, to_dlpack)
-    opaque_tensor = dlw.manager.dl_tensor
+        @test ndims(v) == 1 == pv.ndim
+        @test pv.dtype == np.dtype("uint64")
 
-    @test w.ndim == 2 == ndims(dlw)
-    @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(dlw)]
+        v[1] = 0
+        @test py"($pv[0] == 0).item()"
 
-    if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
-        @test dlw[2, 1] == 3
-    elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
-        @test all(view(dlw, 2, 1) .== 3)
+        w = rand(2, 2)
+        pw = DLPack.share(w, dlpack.from_dlpack)
+
+        @test ndims(w) == 2 == pw.ndim
+        @test pw.dtype == np.dtype("float64")
+        @test w[1, 2] == py"($pw[1, 0]).item()"  # dimensions are reversed
     end
 
 end
@@ -58,23 +81,41 @@ end
 
 @testset "PythonCall" begin
 
-    v = torch.ones((2, 4), dtype = torch.float64)
-    dlv = DLArray(v, torch.to_dlpack)
-    opaque_tensor = dlv.manager.dl_tensor
+    @testset "wrap" begin
+        v = torch.ones((2, 4), dtype = torch.float64)
+        jv = DLPack.wrap(v, torch.to_dlpack)
+        dlv = DLPack.DLManagedTensor(torch.to_dlpack(v))
+        opaque_tensor = dlv.dl_tensor
 
-    @test pyconvert(Int,opaque_tensor.ndim) == 2 == ndims(dlv)
-    @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(dlv)]
-    @test dlv.data isa PermutedDimsArray
+        @test pyconvert(Int, v.ndim) == 2 == opaque_tensor.ndim
+        @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(jv)]
 
-    if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
-        dlv[2] = 0  # mutate a jax's tensor
-        @inferred DLMatrix{Float64}(Array, RowMajor, v, torch.to_dlpack)
-    elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
-        dlv[2:2] .= 0  # mutate a jax's tensor
-        @inferred DLMatrix{Float64}(CuArray, RowMajor, v, torch.to_dlpack)
+        if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
+            jv[5] = 0  # mutate a jax's tensor
+        elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
+            jv[5:5] .= 0  # mutate a jax's tensor
+        end
+
+        ref = torch.tensor(((1, 1, 1, 1), (0, 1, 1, 1)), dtype = torch.float64)
+        @test Bool(torch.all(v == ref).item())
     end
 
-    ref = torch.tensor(((1, 1, 1, 1), (0, 1, 1, 1)), dtype = torch.float64)
-    @test Bool(torch.all(v == ref).item())
+    @testset "share" begin
+        v = ComplexF32[1, 2, 3]
+        pv = DLPack.share(v, torch.from_dlpack)
+
+        @test Bool(ndims(v) == 1 == pv.ndim)
+        @test Bool(pv.dtype == torch.complex64)
+
+        v[1] = 0
+        @test Bool(pv[0] == 0)
+
+        w = rand(2, 2)
+        pw = DLPack.share(w, torch.from_dlpack)
+
+        @test Bool(ndims(w) == 2 == pw.ndim)
+        @test Bool(pw.dtype == torch.float64)
+        @test Bool(w[1, 2] == pw[1, 0])
+    end
 
 end
