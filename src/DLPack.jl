@@ -8,7 +8,7 @@ using Requires
 
 ##  Exports  ##
 
-export DLArray, DLVector, DLMatrix, RowMajor, ColMajor
+export RowMajor, ColMajor
 
 
 ##  Types  ##
@@ -116,38 +116,7 @@ struct DLManager{T, N}
     end
 end
 
-struct DLArray{T, N, A <: AbstractArray{T, N}, F} <: AbstractArray{T, N}
-    foreign::F
-    data::A
-end
-
-function DLArray(manager::DLManagedTensor, foreign)
-    GC.@preserve manager begin
-        typed_manager = DLManager(manager)
-        A = jlarray_type(Val(device_type(manager)))
-        arr = unsafe_wrap(A, typed_manager)
-        data = is_col_major(typed_manager) ? arr : reversedims(arr)
-    end
-    return DLArray(foreign, data)
-end
-
-function DLArray{T, N}(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
-    T, N, A, M <: MemoryLayout
-}
-    col_major = is_col_major(manager, Val(N))
-    if (M === ColMajor && !col_major) || (M === RowMajor && col_major)
-        throw(ArgumentError("Memory layout mismatch"))
-    end
-    typed_manager = DLManager{T, N}(manager)
-    data = reversedims_maybe(M, unsafe_wrap(A, typed_manager))
-    return DLArray(foreign, data)
-end
-
-
 ##  Aliases and constants  ##
-
-const DLVector{T} = DLArray{T, 1}
-const DLMatrix{T} = DLArray{T, 2}
 
 const PYCAPSULE_NAME = Ref(
     (0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
@@ -333,28 +302,6 @@ end
 function release(ptr)
     delete!(SHARES_POOL, ptr)
     return nothing
-end
-
-
-##  Array Interface  ##
-
-Base.size(A::DLArray) = size(A.data)
-Base.size(A::DLArray, d::Integer) = size(A.data, d)
-
-Base.@propagate_inbounds Base.getindex(A::DLArray, I...) = getindex(A.data, I...)
-
-Base.@propagate_inbounds Base.setindex!(A::DLArray, v, I...) = setindex!(A.data, v, I...)
-
-Base.strides(a::DLArray) = strides(a.data)
-
-function Base.unsafe_convert(::Type{Ptr{T}}, A::DLArray) where {T}
-    return Base.unsafe_convert(Ptr{T}, A.data)
-end
-
-Base.elsize(::Type{D}) where {T, N, A, D <: DLArray{T, N, A}} = Base.elsize(A)
-
-function Base.Broadcast.BroadcastStyle(::Type{D}) where {T, N, A, D <: DLArray{T, N, A}}
-    return Base.Broadcast.BroadcastStyle(A)
 end
 
 

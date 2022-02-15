@@ -83,14 +83,6 @@ let
 
 end
 
-function DLArray(o::Py, to_dlpack::Union{Py, Function})
-    return DLArray(DLManagedTensor(to_dlpack(o)), o)
-end
-#
-function DLArray{T, N}(::Type{A}, ::Type{M}, o::Py, to_dlpack) where {T, N, A, M}
-    return DLArray{T, N}(A, M, DLManagedTensor(to_dlpack(o)), o)
-end
-
 function wrap(o::Py, to_dlpack::Union{Py, Function})
     return wrap(DLManagedTensor(to_dlpack(o)), o)
 end
