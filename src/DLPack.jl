@@ -362,18 +362,6 @@ end
 reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
 reshape_me_maybe(::Type{ColMajor}, array) = array
 
-reversedims_maybe(::Type{RowMajor}, array) = reversedims(array)
-reversedims_maybe(::Type{ColMajor}, array) = array
-
-function reversedims(a::AbstractArray)
-    return revdimstype(a)(reshape(a, (reverse ∘ size)(a)))
-end
-
-function revdimstype(a::A) where {T, N, A <: AbstractArray{T, N}}
-    P = ntuple(i -> N + 1 - i, Val(N))
-    return PermutedDimsArray{T, N, P, P, A}
-end
-
 function release(ptr)
     delete!(SHARES_POOL, ptr)
     return nothing
