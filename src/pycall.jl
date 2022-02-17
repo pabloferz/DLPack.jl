@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# See LICENSE.md at https://github.com/pabloferz/DLPack.jl
+
 using .PyCall
 
 
@@ -5,6 +8,11 @@ using .PyCall
 const PYCALL_DLPACK_DELETER = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
 
+"""
+    DLManagedTensor(po::PyObject)
+
+Takes a PyCapsule holding a `DLManagedTensor` and returns the latter.
+"""
 function DLManagedTensor(po::PyObject)
     if !PyCall.pyisinstance(po, PyCall.@pyglobalobj(:PyCapsule_Type))
         throw(ArgumentError("PyObject must be a PyCapsule"))
@@ -41,18 +49,46 @@ function DLManagedTensor(po::PyObject)
     return tensor
 end
 
+"""
+    wrap(o::PyObject, to_dlpack)
+
+Takes a tensor `o::PyObject` and a `to_dlpack` function that generates a
+`DLManagedTensor` bundled in a PyCapsule, and returns a zero-copy
+`array::AbstractArray` pointing to the same data in `o`.
+For tensors with row-mayor ordering the resulting array will have all
+dimensions reversed.
+"""
 function wrap(o::PyObject, to_dlpack::Union{PyObject, Function})
     return wrap(DLManagedTensor(to_dlpack(o)), o)
 end
-#
+
+"""
+    wrap(::Type{<: AbstractArray{T, N}}, ::Type{<: MemoryLayout}, o::PyObject, to_dlpack)
+
+Type-inferrable alternative to `wrap(o, to_dlpack)`.
+"""
 function wrap(::Type{A}, ::Type{M}, o::PyObject, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
 }
     return wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
 end
 
+"""
+    share(A::StridedArray, from_dlpack)
+
+Takes a Julia array and an external `from_dlpack` method that consumes PyCapsules
+following the DLPack protocol. Returns a Python tensor that shares the data with `A`.
+The resulting tensor will have all dimensions reversed with respect
+to the Julia array.
+"""
 share(A::StridedArray, from_dlpack::PyObject) = share(A, PyObject, from_dlpack)
-#
+
+"""
+    share(A::StridedArray, ::Type{PyObject}, from_dlpack)
+
+Similar to `share(A, from_dlpack::PyObject)`. Use when there is a needed to
+disambiguate the return type.
+"""
 function share(A::StridedArray, ::Type{PyObject}, from_dlpack)
     capsule = share(A)
     tensor = capsule.tensor
