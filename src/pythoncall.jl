@@ -72,7 +72,7 @@ let
     """
         share(A::StridedArray, ::Type{Py}, from_dlpack)
 
-    Similar to `share(A, from_dlpack::Py)`. Use when there is a needed to
+    Similar to `share(A, from_dlpack::Py)`. Use when there is a need to
     disambiguate the return type.
     """
     function share(A::StridedArray, ::Type{Py}, from_dlpack)

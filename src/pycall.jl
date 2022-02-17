@@ -86,7 +86,7 @@ share(A::StridedArray, from_dlpack::PyObject) = share(A, PyObject, from_dlpack)
 """
     share(A::StridedArray, ::Type{PyObject}, from_dlpack)
 
-Similar to `share(A, from_dlpack::PyObject)`. Use when there is a needed to
+Similar to `share(A, from_dlpack::PyObject)`. Use when there is a need to
 disambiguate the return type.
 """
 function share(A::StridedArray, ::Type{PyObject}, from_dlpack)
