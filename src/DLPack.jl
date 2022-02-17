@@ -171,15 +171,20 @@ const SHARES_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
 
 ##  Wrapping and sharing  ##
 
-"""
-    wrap(manager::DLManagedTensor, foreign)
+function wrap end
 
-Takes a `DLManagedTensor` and a corresponding `foreign` tensor, and returns a
-zero-copy `array::AbstractArray` pointing to the same data in `foreign`.
-For tensors with row-mayor ordering the resulting array will have all
-dimensions reversed.
 """
-function wrap(manager::DLManagedTensor, foreign)
+    unsafe_wrap(manager::DLManagedTensor, foreign)
+
+Takes a `DLManagedTensor` and a corresponding `foreign` tensor, and returns
+a zero-copy `array::AbstractArray` pointing to the same data in `foreign`.
+For tensors with row-major ordering the resulting array will have all
+dimensions reversed.
+
+This method is unsafe as it does not verify that `manager` and `foreign`
+actually point to the same data.
+"""
+function Base.unsafe_wrap(manager::DLManagedTensor, foreign)
     GC.@preserve manager begin
         typed_manager = DLManager(manager)
         A = jlarray_type(Val(device_type(manager)))
@@ -193,19 +198,22 @@ function wrap(manager::DLManagedTensor, foreign)
 end
 
 """
-    wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+    unsafe_wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
         T, N, A <: AbstractArray{T, N}, M <: MemoryLayout
     }
 
 Takes a `DLManagedTensor` and a corresponding `foreign` tensor, and tries to
 return a zero-copy `array::AbstractArray{T, N}` pointing to the same data in
 `foreign` in a type-inferable way.
-If there is a mismatch between any of the types `T`, `N`, or memory layout `M`
-and the matching properties of `foreign`, an error is thrown.
-For tensors with row-mayor ordering the resulting array will have all
+If there is a mismatch between any of the types `T`, `N`, or memory layout
+`M` and the matching properties of `foreign`, an error is thrown.
+For tensors with row-major ordering the resulting array will have all
 dimensions reversed.
+
+This method is unsafe as it does not verify that `manager` and `foreign`
+actually point to the same data.
 """
-function wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+function Base.unsafe_wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
     T, N, A <: AbstractArray{T, N}, M <: MemoryLayout
 }
     col_major = is_col_major(manager, Val(N))

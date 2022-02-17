@@ -55,11 +55,11 @@ end
 Takes a tensor `o::PyObject` and a `to_dlpack` function that generates a
 `DLManagedTensor` bundled in a PyCapsule, and returns a zero-copy
 `array::AbstractArray` pointing to the same data in `o`.
-For tensors with row-mayor ordering the resulting array will have all
+For tensors with row-major ordering the resulting array will have all
 dimensions reversed.
 """
 function wrap(o::PyObject, to_dlpack::Union{PyObject, Function})
-    return wrap(DLManagedTensor(to_dlpack(o)), o)
+    return unsafe_wrap(DLManagedTensor(to_dlpack(o)), o)
 end
 
 """
@@ -70,7 +70,7 @@ Type-inferrable alternative to `wrap(o, to_dlpack)`.
 function wrap(::Type{A}, ::Type{M}, o::PyObject, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
 }
-    return wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
+    return unsafe_wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
 end
 
 """
