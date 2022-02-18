@@ -101,7 +101,7 @@ mutable struct DLManagedTensor
         if manager.deleter != C_NULL
             # We need a finalizer that calls `deleter` to destroy its original
             # enclosing context `manager_ctx`
-            delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), Ref(manager))
+            delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), dlptr)
             finalizer(delete, manager)
         end
 
