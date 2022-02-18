@@ -1,3 +1,17 @@
+# SPDX-License-Identifier: MIT
+# See LICENSE.md at https://github.com/pabloferz/DLPack.jl
+
+"""    DLPack
+
+The `DLPack` module provides a Julia interface to facilitate bidirectional data
+exchange of tensor objects between Julia and Python libraries such as JAX, CuPy,
+PyTorch, among others (all python libraries supporting the [DLPack protocol][1]).
+
+It can share and wrap CPU and CUDA arrays, and supports interfacing through both
+`PyCall` and `PythonCall`.
+
+[1]: https://data-apis.org/array-api/latest/design_topics/data_interchange.html
+"""
 module DLPack
 
 
@@ -44,6 +58,11 @@ end
     kDLComplex = 5
 end
 
+"""
+    DLDataType
+
+See [`dtypes_to_jltypes`](@ref) for its mapping to Julia types.
+"""
 struct DLDataType
     code::Cuchar
     bits::Cuchar
@@ -60,8 +79,11 @@ struct DLTensor
     byte_offset::Culonglong
 end
 
-# Defined as mutable since we need a finalizer that calls `deleter`
-# to destroy its original enclosing context `manager_ctx`
+"""
+    DLManagedTensor
+
+This is the main C-API data structure of the DLPack protocol.
+"""
 mutable struct DLManagedTensor
     dl_tensor::DLTensor
     manager_ctx::Ptr{Cvoid}
@@ -77,7 +99,9 @@ mutable struct DLManagedTensor
         manager = unsafe_load(dlptr)
 
         if manager.deleter != C_NULL
-            delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), Ref(manager))
+            # We need a finalizer that calls `deleter` to destroy its original
+            # enclosing context `manager_ctx`
+            delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), dlptr)
             finalizer(delete, manager)
         end
 
@@ -85,6 +109,12 @@ mutable struct DLManagedTensor
     end
 end
 
+"""
+    Capsule
+
+Data type for holding the shape, strides and associated `DLManagedTensor`
+of a Julia array being shared.
+"""
 struct Capsule
     tensor::DLManagedTensor
     shape::Vector{Clonglong}
@@ -96,6 +126,12 @@ abstract type MemoryLayout end
 struct ColMajor <: MemoryLayout end
 struct RowMajor <: MemoryLayout end
 
+"""
+    DLManager{T, N}
+
+Wrapper around `DLManagedTensor` to pass the type `T` and dimension `N`
+in a type-inference friendly maner.
+"""
 struct DLManager{T, N}
     manager::DLManagedTensor
 
@@ -135,7 +171,20 @@ const SHARES_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
 
 ##  Wrapping and sharing  ##
 
-function wrap(manager::DLManagedTensor, foreign)
+function wrap end
+
+"""
+    unsafe_wrap(manager::DLManagedTensor, foreign)
+
+Takes a `DLManagedTensor` and a corresponding `foreign` tensor, and returns
+a zero-copy `array::AbstractArray` pointing to the same data in `foreign`.
+For tensors with row-major ordering the resulting array will have all
+dimensions reversed.
+
+This method is unsafe as it does not verify that `manager` and `foreign`
+actually point to the same data.
+"""
+function Base.unsafe_wrap(manager::DLManagedTensor, foreign)
     GC.@preserve manager begin
         typed_manager = DLManager(manager)
         A = jlarray_type(Val(device_type(manager)))
@@ -148,7 +197,23 @@ function wrap(manager::DLManagedTensor, foreign)
     return array
 end
 
-function wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+"""
+    unsafe_wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
+        T, N, A <: AbstractArray{T, N}, M <: MemoryLayout
+    }
+
+Takes a `DLManagedTensor` and a corresponding `foreign` tensor, and tries to
+return a zero-copy `array::AbstractArray{T, N}` pointing to the same data in
+`foreign` in a type-inferable way.
+If there is a mismatch between any of the types `T`, `N`, or memory layout
+`M` and the matching properties of `foreign`, an error is thrown.
+For tensors with row-major ordering the resulting array will have all
+dimensions reversed.
+
+This method is unsafe as it does not verify that `manager` and `foreign`
+actually point to the same data.
+"""
+function Base.unsafe_wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
     T, N, A <: AbstractArray{T, N}, M <: MemoryLayout
 }
     col_major = is_col_major(manager, Val(N))
@@ -165,6 +230,14 @@ function wrap(::Type{A}, ::Type{M}, manager::DLManagedTensor, foreign) where {
     return array
 end
 
+"""
+    share(A::StridedArray)
+
+Returns a `Capsule` holding an `DLManagedTensor` that can be exported
+to external libraries supporting the DLPack protocol.
+The resulting tensor will have all dimensions reversed with respect
+to the Julia array.
+"""
 share(A::StridedArray) = unsafe_share(A)
 
 function unsafe_share(A::AbstractArray{T, N}) where {T, N}
@@ -189,6 +262,11 @@ end
 
 Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 
+"""
+    jltypes_to_dtypes()
+
+Mapping from Julia's numeric types to their `DLDataType` representation.
+"""
 jltypes_to_dtypes() = Dict(
     Int8 => DLDataType(kDLInt, 8, 1),
     Int16 => DLDataType(kDLInt, 16, 1),
@@ -205,6 +283,11 @@ jltypes_to_dtypes() = Dict(
     ComplexF64 => DLDataType(kDLComplex, 128, 1),
 )
 
+"""
+    dtypes_to_jltypes()
+
+Inverse mapping of `jltypes_to_dtypes`.
+"""
 dtypes_to_jltypes() = Dict(
     DLDataType(kDLInt, 8, 1) => Int8,
     DLDataType(kDLInt, 16, 1) => Int16,
@@ -287,22 +370,13 @@ end
 reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
 reshape_me_maybe(::Type{ColMajor}, array) = array
 
-reversedims_maybe(::Type{RowMajor}, array) = reversedims(array)
-reversedims_maybe(::Type{ColMajor}, array) = array
-
-function reversedims(a::AbstractArray)
-    return revdimstype(a)(reshape(a, (reverse ∘ size)(a)))
-end
-
-function revdimstype(a::A) where {T, N, A <: AbstractArray{T, N}}
-    P = ntuple(i -> N + 1 - i, Val(N))
-    return PermutedDimsArray{T, N, P, P, A}
-end
-
 function release(ptr)
     delete!(SHARES_POOL, ptr)
     return nothing
 end
+
+
+include("extras.jl")
 
 
 ##  Module initialization  ##

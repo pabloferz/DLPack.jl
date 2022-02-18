@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# See LICENSE.md at https://github.com/pabloferz/DLPack.jl
+
 share(A::CUDA.StridedCuArray) = unsafe_share(parent(A))
 
 jlarray_type(::Val{kDLCUDA}) = CUDA.CuArray

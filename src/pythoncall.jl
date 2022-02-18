@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# See LICENSE.md at https://github.com/pabloferz/DLPack.jl
+
 using .PythonCall
 
 
@@ -25,6 +28,11 @@ let
     PyCapsule_GetPointer = Libdl.dlsym(lib_ptr, :PyCapsule_GetPointer)
     PyCapsule_SetDestructor = Libdl.dlsym(lib_ptr, :PyCapsule_SetDestructor)
 
+    """
+        DLManagedTensor(po::Py)
+
+    Takes a PyCapsule holding a `DLManagedTensor` and returns the latter.
+    """
     function DLManagedTensor(po::Py)
         ptr = PythonCall.getptr(po)
 
@@ -61,6 +69,12 @@ let
         return tensor
     end
 
+    """
+        share(A::StridedArray, ::Type{Py}, from_dlpack)
+
+    Similar to `share(A, from_dlpack::Py)`. Use when there is a need to
+    disambiguate the return type.
+    """
     function share(A::StridedArray, ::Type{Py}, from_dlpack)
         capsule = share(A)
         tensor = capsule.tensor
@@ -83,14 +97,36 @@ let
 
 end
 
+"""
+    wrap(o::Py, to_dlpack)
+
+Takes a tensor `o::Py` and a `to_dlpack` function that generates a
+`DLManagedTensor` bundled in a PyCapsule, and returns a zero-copy
+`array::AbstractArray` pointing to the same data in `o`.
+For tensors with row-major ordering the resulting array will have all
+dimensions reversed.
+"""
 function wrap(o::Py, to_dlpack::Union{Py, Function})
-    return wrap(DLManagedTensor(to_dlpack(o)), o)
+    return unsafe_wrap(DLManagedTensor(to_dlpack(o)), o)
 end
-#
+
+"""
+    wrap(::Type{<: AbstractArray{T, N}}, ::Type{<: MemoryLayout}, o::Py, to_dlpack)
+
+Type-inferrable alternative to `wrap(o, to_dlpack)`.
+"""
 function wrap(::Type{A}, ::Type{M}, o::Py, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
 }
-    return wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
+    return unsafe_wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
 end
 
+"""
+    share(A::StridedArray, from_dlpack)
+
+Takes a Julia array and an external `from_dlpack` method that consumes PyCapsules
+following the DLPack protocol. Returns a Python tensor that shares the data with `A`.
+The resulting tensor will have all dimensions reversed with respect
+to the Julia array.
+"""
 share(A::StridedArray, from_dlpack::Py) = share(A, Py, from_dlpack)
