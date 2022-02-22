@@ -1,3 +1,5 @@
+include("install_dependencies.jl")
+
 using CUDA
 using DLPack
 using PythonCall
@@ -9,9 +11,9 @@ include("rebuild_pycall.jl")
 using PyCall
 
 
-# Just for the sake of variety:
 # Load torch with PythonCall
 const torch = PythonCall.pyimport("torch")
+# For the sake of variety:
 # Load jax with PyCall
 const jax = PyCall.pyimport("jax")
 const np = PyCall.pyimport("jax.numpy")
