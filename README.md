@@ -13,7 +13,7 @@ CuPy, PyTorch, among others (all python libraries supporting the
 It can share and wrap CPU and CUDA arrays, and supports interfacing through
 both `PyCall` and `PythonCall`.
 
-## Install
+## Installation
 
 From the Julia REPL activate the package manager (type `]`) and run:
 
@@ -55,7 +55,7 @@ using PythonCall
 torch = pyimport("torch")
 
 pyv = torch.arange(1, 5).reshape(2, 2)
-v = DLPack.wrap(pyv, dlpack.to_dlpack)
+v = DLPack.wrap(pyv, torch.to_dlpack)
 
 Bool(v[2, 1] == 2 == pyv[0, 1])  # dimensions are reversed
 ```
@@ -71,7 +71,7 @@ torch = pyimport("torch")
 v = rand(3, 2)
 pyv = DLPack.share(v, torch.from_dlpack)
 
-Bool(pyv.shape == torch.Size((2, 3))  # again, the dimensions are reversed.
+Bool(pyv.shape == torch.Size((2, 3)))  # again, the dimensions are reversed.
 ```
 
 Do you want to exchange CUDA tensors? Worry not:
