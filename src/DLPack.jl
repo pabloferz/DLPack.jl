@@ -92,20 +92,24 @@ mutable struct DLManagedTensor
     function DLManagedTensor(
         dl_tensor::DLTensor, manager_ctx::Ptr{Cvoid}, deleter::Ptr{Cvoid}
     )
-        return new(dl_tensor, manager_ctx, deleter)
+        manager = new(dl_tensor, manager_ctx, deleter)
+
+        if manager.deleter != C_NULL
+            # We assume `manager_ctx` is a pointer to an imported `DLManagedTensor`
+            # that holds `dl_tensor`.
+            finalizer(manager) do manager
+                ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), manager.manager_ctx)
+            end
+        end
+
+        return manager
     end
 
     function DLManagedTensor(dlptr::Ptr{DLManagedTensor})
         manager = unsafe_load(dlptr)
-
-        if manager.deleter != C_NULL
-            # We need a finalizer that calls `deleter` to destroy its original
-            # enclosing context `manager_ctx`
-            delete = manager -> ccall(manager.deleter, Cvoid, (Ptr{Cvoid},), dlptr)
-            finalizer(delete, manager)
-        end
-
-        return manager
+        # We create a new `DLManagedTensor`, since the original producer might also try to
+        # delete the imported one (e.g. CuPy).
+        return DLManagedTensor(manager.dl_tensor, Ptr{Cvoid}(dlptr), manager.deleter)
     end
 end
 
@@ -130,7 +134,7 @@ struct RowMajor <: MemoryLayout end
     DLManager{T, N}
 
 Wrapper around `DLManagedTensor` to pass the type `T` and dimension `N`
-in a type-inference friendly maner.
+in a type-inference friendly manner.
 """
 struct DLManager{T, N}
     manager::DLManagedTensor
