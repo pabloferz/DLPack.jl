@@ -365,10 +365,12 @@ function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
     return is_col_major(manager.manager, Val(N))
 end
 #
-function is_col_major(manager::DLManagedTensor, val::Val{N})::Bool where {N}
+is_col_major(manager::DLManagedTensor, val::Val{0}) = true
+                    
+function is_col_major(manager::DLManagedTensor, val::Val)::Bool
     sz = unsafe_size(manager, val)
     st = unsafe_strides(manager, val)
-    return N == 0 || prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
+    return prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
 end
 
 reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
