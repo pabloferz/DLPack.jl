@@ -100,6 +100,15 @@ end
 
         ref = torch.tensor(((1, 1, 1, 1), (0, 1, 1, 1)), dtype = torch.float64)
         @test Bool(torch.all(v == ref).item())
+
+        # tensor with Col-Major layout
+        w = v.T
+        jw = DLPack.wrap(w, torch.to_dlpack)
+        @test size(jw) == (4, 2)
+
+        # tensor with non-contiguous array
+        x = torch.ones((2, 3, 4), dtype = torch.int64).transpose(2, 1)
+        @test_throws ArgumentError DLPack.wrap(x, torch.to_dlpack)
     end
 
     @testset "share" begin

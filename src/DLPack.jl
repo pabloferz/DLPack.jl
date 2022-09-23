@@ -366,11 +366,17 @@ function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
 end
 #
 is_col_major(manager::DLManagedTensor, val::Val{0}) = true
-                    
+
 function is_col_major(manager::DLManagedTensor, val::Val)::Bool
     sz = unsafe_size(manager, val)
     st = unsafe_strides(manager, val)
-    return prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
+    if prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
+        return true
+    elseif reverse(st) == Base.size_to_strides(1, reverse(sz)...)
+        return false
+    else
+        throw(ArgumentError("Only contiguous arrays can be wrapped with Array"))
+    end
 end
 
 reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
