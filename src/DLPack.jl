@@ -366,7 +366,7 @@ function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
 end
 #
 is_col_major(manager::DLManagedTensor, val::Val{0}) = true
-                    
+
 function is_col_major(manager::DLManagedTensor, val::Val)::Bool
     sz = unsafe_size(manager, val)
     st = unsafe_strides(manager, val)
