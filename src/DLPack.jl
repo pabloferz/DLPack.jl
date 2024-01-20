@@ -166,6 +166,8 @@ const USED_PYCAPSULE_NAME = Ref(Cchar.(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 ))
 
+const DELETER = Ref{Ptr{Cvoid}}(0)
+
 const WRAPS_POOL = IdDict{WeakRef, Any}()
 
 # We held references to the arrays that will be shared to python libraries, and the
@@ -388,19 +390,19 @@ include("extras.jl")
 ##  Module initialization  ##
 
 function __init__()
+    const DELETER[] = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
-    @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
-        include("cuda.jl")
+    if !isdefined(Base, :get_extension)
+        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
+            include("../ext/DLPackCUDA.jl")
+        end
+        @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
+            include("../ext/DLPackPyCall.jl")
+        end
+        @require PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d" begin
+            include("../ext/DLPackPythonCall.jl")
+        end
     end
-
-    @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
-        include("pycall.jl")
-    end
-
-    @require PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d" begin
-        include("pythoncall.jl")
-    end
-
 end
 
 

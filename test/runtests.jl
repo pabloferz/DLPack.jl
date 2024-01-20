@@ -13,6 +13,7 @@ using PyCall
 
 # Load torch with PythonCall
 const torch = PythonCall.pyimport("torch")
+
 # For the sake of variety:
 # Load jax with PyCall
 const jax = PyCall.pyimport("jax")
@@ -36,10 +37,10 @@ jax.config.update("jax_enable_x64", true)
         @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(jv)]
 
         if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
-            jv[1] = 0  # mutate a jax's tensor
+            jv[1] = 0  # mutate a jax tensor
             @inferred DLPack.wrap(Vector{Float32}, ColMajor, v, to_dlpack)
         elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
-            jv[1:1] .= 0  # mutate a jax's tensor
+            jv[1:1] .= 0  # mutate a jax tensor
         end
 
         @test py"$np.all($v == $np.asarray([0.0, 2.0, 3.0])).item()"
@@ -56,7 +57,7 @@ jax.config.update("jax_enable_x64", true)
             @test jw[1, 2] == 3  # dimensions are reversed
             @inferred DLPack.wrap(Matrix{Int64}, RowMajor, w, to_dlpack)
         elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
-            @test all(view(dlw, 1, 2) .== 3)  # dimensions are reversed
+            @test all(view(jw, 1, 2) .== 3)  # dimensions are reversed
         end
     end
 
@@ -93,9 +94,9 @@ end
         @test opaque_tensor.dtype == DLPack.jltypes_to_dtypes()[eltype(jv)]
 
         if DLPack.device_type(opaque_tensor) == DLPack.kDLCPU
-            jv[5] = 0  # mutate a jax's tensor
+            jv[5] = 0  # mutate a torch tensor
         elseif DLPack.device_type(opaque_tensor) == DLPack.kDLCUDA
-            jv[5:5] .= 0  # mutate a jax's tensor
+            jv[5:5] .= 0  # mutate a torch tensor
         end
 
         ref = torch.tensor(((1, 1, 1, 1), (0, 1, 1, 1)), dtype = torch.float64)

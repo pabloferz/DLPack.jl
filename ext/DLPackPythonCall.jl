@@ -1,11 +1,22 @@
 # SPDX-License-Identifier: MIT
 # See LICENSE.md at https://github.com/pabloferz/DLPack.jl
 
+module DLPackPythonCall
+
+
+##  Dependencies  ##
+
+import DLPack
+@static if isdefined(Base, :get_extension)
+    import PythonCall
+else
+    import ..PythonCall
+end
+
+
+##  Extensions  ##
 
 const CPython = PythonCall.C
-
-# This will be used to release the `DLManagedTensor`s and associated array.
-const PYTHONCALL_DLPACK_DELETER = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
 
 """
@@ -13,7 +24,7 @@ const PYTHONCALL_DLPACK_DELETER = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
 Takes a PyCapsule holding a `DLManagedTensor` and returns the latter.
 """
-function DLManagedTensor(po::PythonCall.Py)
+function DLPack.DLManagedTensor(po::PythonCall.Py)
     ptr = PythonCall.getptr(po)
 
     if CPython.PyObject_IsInstance(ptr, CPython.POINTERS.PyCapsule_Type) != 1
@@ -26,11 +37,11 @@ function DLManagedTensor(po::PythonCall.Py)
         throw(ArgumentError("PyCapsule in use, have you wrapped it already?"))
     end
 
-    dlptr = Ptr{DLManagedTensor}(CPython.PyCapsule_GetPointer(ptr, name))
-    tensor = DLManagedTensor(dlptr)
+    dlptr = Ptr{DLPack.DLManagedTensor}(CPython.PyCapsule_GetPointer(ptr, name))
+    tensor = DLPack.DLManagedTensor(dlptr)
 
     # Replace the capsule name to "used_dltensor"
-    set_name_flag = CPython.PyCapsule_SetName(ptr, USED_PYCAPSULE_NAME)
+    set_name_flag = CPython.PyCapsule_SetName(ptr, DLPack.USED_PYCAPSULE_NAME)
 
     if set_name_flag != 0
         @warn("Could not mark PyCapsule as used")
@@ -52,8 +63,8 @@ Takes a tensor `o::Py` and a `to_dlpack` function that generates a
 For tensors with row-major ordering the resulting array will have all
 dimensions reversed.
 """
-function wrap(o::PythonCall.Py, to_dlpack::Union{PythonCall.Py, Function})
-    return unsafe_wrap(DLManagedTensor(to_dlpack(o)), o)
+function DLPack.wrap(o::PythonCall.Py, to_dlpack::Union{PythonCall.Py, Function})
+    return DLPack.unsafe_wrap(DLPack.DLManagedTensor(to_dlpack(o)), o)
 end
 
 """
@@ -61,10 +72,10 @@ end
 
 Type-inferrable alternative to `wrap(o, to_dlpack)`.
 """
-function wrap(::Type{A}, ::Type{M}, o::PythonCall.Py, to_dlpack) where {
+function DLPack.wrap(::Type{A}, ::Type{M}, o::PythonCall.Py, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
 }
-    return unsafe_wrap(A, M, DLManagedTensor(to_dlpack(o)), o)
+    return DLPack.unsafe_wrap(A, M, DLPack.DLManagedTensor(to_dlpack(o)), o)
 end
 
 """
@@ -75,7 +86,7 @@ following the DLPack protocol. Returns a Python tensor that shares the data with
 The resulting tensor will have all dimensions reversed with respect
 to the Julia array.
 """
-share(A::StridedArray, from_dlpack::PythonCall.Py) = share(A, PythonCall.Py, from_dlpack)
+DLPack.share(A::StridedArray, from_dlpack::PythonCall.Py) = DLPack.share(A, PythonCall.Py, from_dlpack)
 
 """
     share(A::StridedArray, ::Type{Py}, from_dlpack)
@@ -83,20 +94,23 @@ share(A::StridedArray, from_dlpack::PythonCall.Py) = share(A, PythonCall.Py, fro
 Similar to `share(A, from_dlpack::Py)`. Use when there is a need to
 disambiguate the return type.
 """
-function share(A::StridedArray, ::Type{PythonCall.Py}, from_dlpack)
-    capsule = share(A)
+function DLPack.share(A::StridedArray, ::Type{PythonCall.Py}, from_dlpack)
+    capsule = DLPack.share(A)
     tensor = capsule.tensor
     tensor_ptr = pointer_from_objref(tensor)
 
     # Prevent `A` and `tensor` from being `gc`ed while `o` is around.
     # For certain DLPack-compatible libraries, e.g. PyTorch, the tensor is
     # captured and the `deleter` referenced from it.
-    SHARES_POOL[tensor_ptr] = (capsule, A)
-    tensor.deleter = PYTHONCALL_DLPACK_DELETER
+    DLPack.SHARES_POOL[tensor_ptr] = (capsule, A)
+    tensor.deleter = DLPack.DELETER[]
 
     pycapsule = PythonCall.pynew(
-        CPython.PyCapsule_New(tensor_ptr, PYCAPSULE_NAME, C_NULL)
+        CPython.PyCapsule_New(tensor_ptr, DLPack.PYCAPSULE_NAME, C_NULL)
     )
 
     return from_dlpack(pycapsule)
 end
+
+
+end  # module DLPackPythonCall
