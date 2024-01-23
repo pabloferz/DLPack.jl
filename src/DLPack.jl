@@ -166,7 +166,9 @@ const USED_PYCAPSULE_NAME = Ref(Cchar.(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 ))
 
-const DELETER = Ref{Ptr{Cvoid}}(0)
+# By default, DELETER wraps a `C_NULL`, but it's set to
+# `@cfunction(release, Cvoid, # (Ptr{Cvoid},))` during module initialization
+const DELETER = Ref(C_NULL)
 
 const WRAPS_POOL = IdDict{WeakRef, Any}()
 
