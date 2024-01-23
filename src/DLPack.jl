@@ -247,17 +247,25 @@ to the Julia array.
 share(A::StridedArray) = unsafe_share(A)
 
 function unsafe_share(A::AbstractArray{T, N}) where {T, N}
+    B = parent(A)
+    I = parentindices(A)
+
     sh = Clonglong[(reverse ∘ size)(A)...]
     st = Clonglong[(reverse ∘ strides)(A)...]
 
-    # This should work for Ptr and CuPtr
+    # Ideally, we would use `pointer(B)` (from the parent) along with the offset
+    # information. Unfortunately, other frameworks seem to ignore the offset altogether.
+    # This should work for `Ptr` and `CuPtr`.
     data = Ptr{Cvoid}(UInt(pointer(A)))
     ctx = dldevice(A)
     ndim = Cint(N)
     dtype = jltypes_to_dtypes()[T]
     sh_ptr = pointer(sh)
     st_ptr = pointer(st)
-    dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(0))
+    stride1 = Base.compute_stride1(B, I)
+    offset1 = Base.compute_offset1(B, stride1, I)
+
+    dl_tensor = DLTensor(data, ctx, ndim, dtype, sh_ptr, st_ptr, Culonglong(offset1))
     tensor = DLManagedTensor(dl_tensor, C_NULL, C_NULL)
 
     return Capsule(tensor, sh, st)
