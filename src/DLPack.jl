@@ -166,7 +166,14 @@ const USED_PYCAPSULE_NAME = Ref(Cchar.(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 ))
 
-const DELETER = Ref{Ptr{Cvoid}}(0)
+"""
+    DELETER
+
+Wraps a pointer to the function that will get called whenever any array that is shared
+with another library gets deleted. By default, `DELETER` wraps a `C_NULL`, but `DELETER[]`
+is set to `@cfunction(release, Cvoid, (Ptr{Cvoid},))` during module initialization.
+"""
+const DELETER = Ref(C_NULL)
 
 const WRAPS_POOL = IdDict{WeakRef, Any}()
 
@@ -390,7 +397,7 @@ include("extras.jl")
 ##  Module initialization  ##
 
 function __init__()
-    const DELETER[] = @cfunction(release, Cvoid, (Ptr{Cvoid},))
+    DELETER[] = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
     if !isdefined(Base, :get_extension)
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
