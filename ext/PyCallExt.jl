@@ -16,6 +16,9 @@ end
 
 ##  Extensions  ##
 
+const DLArray = PyCall.PyNULL()
+
+
 """
     DLManagedTensor(po::PyObject)
 
@@ -112,7 +115,15 @@ function DLPack.share(A::StridedArray, from_dlpack::PyCall.PyObject)
         tensor_ptr, DLPack.PYCAPSULE_NAME, C_NULL
     ))
 
-    return from_dlpack(pycapsule)
+    return try
+        from_dlpack(pycapsule)
+    catch
+        dl_array = DLArray()
+        ctx = DLPack.dldevice(tensor)
+        dl_array.capsule = pycapsule
+        dl_array.device = (Int(ctx.device_type), ctx.device_id)
+        from_dlpack(dl_array)
+    end
 end
 
 
@@ -133,6 +144,20 @@ function DLPack.share(A::StridedArray, ::Type{PyCall.PyObject}, from_dlpack)
         :share
     )
     DLPack.share(A, PyCall.pyfunction(from_dlpack, PyCall.PyObject))
+end
+
+
+##  Extension initialization  ##
+
+function __init__()
+    copy!(DLArray,
+        PyCall.@pydef_object mutable struct DLArray
+            capsule = nothing
+            device = nothing
+            __dlpack__(self; stream = nothing) = self."capsule"
+            __dlpack_device__(self) = self."device"
+        end
+    )
 end
 
 

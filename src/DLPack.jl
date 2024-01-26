@@ -328,6 +328,8 @@ function jlarray_type(::Val{D}) where {D}
 end
 
 dldevice(::StridedArray) = DLDevice(kDLCPU, Cint(0))
+dldevice(tensor::DLTensor) = tensor.ctx
+dldevice(manager::DLManagedTensor) = dldevice(manager.dl_tensor)
 
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)

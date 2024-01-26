@@ -17,6 +17,7 @@ end
 ##  Extensions  ##
 
 const CPython = PythonCall.C
+const DLArray = PythonCall.pynew()
 
 
 """
@@ -101,7 +102,13 @@ function DLPack.share(A::StridedArray, from_dlpack::PythonCall.Py)
         CPython.PyCapsule_New(tensor_ptr, DLPack.PYCAPSULE_NAME, C_NULL)
     )
 
-    return from_dlpack(pycapsule)
+    return try
+        from_dlpack(pycapsule)
+    catch
+        ctx = DLPack.dldevice(tensor)
+        device = (Int(ctx.device_type), ctx.device_id)
+        from_dlpack(DLArray(pycapsule, device))
+    end
 end
 
 
@@ -122,6 +129,36 @@ function DLPack.share(A::StridedArray, ::Type{PythonCall.Py}, from_dlpack)
         :share
     )
     DLPack.share(A, PythonCall.pyfunc(from_dlpack))
+end
+
+
+##  Extension initialization  ##
+
+function __init__()
+    PythonCall.pycopy!(DLArray,
+        PythonCall.pytype("DLArray", (), [
+            "__module__" => "__main__",
+
+            PythonCall.pyfunc(
+                name = "__init__",
+                (self, capsule, device) -> begin
+                    self.capsule = capsule
+                    self.device = device
+                    nothing
+                end,
+            ),
+
+            PythonCall.pyfunc(
+                name = "__dlpack__",
+                (self; stream = nothing) -> self.capsule,
+            ),
+
+            PythonCall.pyfunc(
+                name = "__dlpack_device__",
+                (self) -> self.device,
+            )
+        ])
+    )
 end
 
 
