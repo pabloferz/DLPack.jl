@@ -1,100 +1,111 @@
 # SPDX-License-Identifier: MIT
 # See LICENSE.md at https://github.com/pabloferz/DLPack.jl
 
-module DLPackPythonCall
+module PyCallExt
 
 
 ##  Dependencies  ##
 
 import DLPack
 @static if isdefined(Base, :get_extension)
-    import PythonCall
+    import PyCall
 else
-    import ..PythonCall
+    import ..PyCall
 end
 
 
 ##  Extensions  ##
 
-const CPython = PythonCall.C
-
-
 """
-    DLManagedTensor(po::Py)
+    DLManagedTensor(po::PyObject)
 
 Takes a PyCapsule holding a `DLManagedTensor` and returns the latter.
 """
-function DLPack.DLManagedTensor(po::PythonCall.Py)
-    ptr = PythonCall.getptr(po)
-
-    if CPython.PyObject_IsInstance(ptr, CPython.POINTERS.PyCapsule_Type) != 1
+function DLPack.DLManagedTensor(po::PyCall.PyObject)
+    if !PyCall.pyisinstance(po, PyCall.@pyglobalobj(:PyCapsule_Type))
         throw(ArgumentError("PyObject must be a PyCapsule"))
     end
 
-    name = CPython.PyCapsule_GetName(ptr)
+    name = PyCall.@pycheck ccall(
+        (PyCall.@pysym :PyCapsule_GetName), Ptr{Cchar}, (PyCall.PyPtr,), po
+    )
 
     if unsafe_string(name) == "used_dltensor"
         throw(ArgumentError("PyCapsule in use, have you wrapped it already?"))
     end
 
-    dlptr = Ptr{DLPack.DLManagedTensor}(CPython.PyCapsule_GetPointer(ptr, name))
+    dlptr = PyCall.@pycheck ccall(
+        (PyCall.@pysym :PyCapsule_GetPointer),
+        Ptr{DLPack.DLManagedTensor}, (PyCall.PyPtr, Ptr{Cchar}),
+        po, name
+    )
+
     tensor = DLPack.DLManagedTensor(dlptr)
 
     # Replace the capsule name to "used_dltensor"
-    set_name_flag = CPython.PyCapsule_SetName(ptr, DLPack.USED_PYCAPSULE_NAME)
-
+    set_name_flag = PyCall.@pycheck ccall(
+        (PyCall.@pysym :PyCapsule_SetName),
+        Cint, (PyCall.PyPtr, Ptr{Cchar}),
+        po, DLPack.USED_PYCAPSULE_NAME
+    )
     if set_name_flag != 0
         @warn("Could not mark PyCapsule as used")
     end
 
     # Extra precaution: Replace the capsule destructor to prevent it from deleting the
     # tensor. We will use the `DLManagedTensor.deleter` instead.
-    CPython.PyCapsule_SetDestructor(ptr, C_NULL)
+    PyCall.@pycheck ccall(
+        (PyCall.@pysym :PyCapsule_SetDestructor),
+        Cint, (PyCall.PyPtr, Ptr{Cvoid}),
+        po, C_NULL
+    )
 
     return tensor
 end
 
 """
-    wrap(o::Py, to_dlpack)
+    wrap(o::PyObject, to_dlpack)
 
-Takes a tensor `o::Py` and a `to_dlpack` function that generates a
+Takes a tensor `o::PyObject` and a `to_dlpack` function that generates a
 `DLManagedTensor` bundled in a PyCapsule, and returns a zero-copy
 `array::AbstractArray` pointing to the same data in `o`.
 For tensors with row-major ordering the resulting array will have all
 dimensions reversed.
 """
-function DLPack.wrap(o::PythonCall.Py, to_dlpack::Union{PythonCall.Py, Function})
+function DLPack.wrap(o::PyCall.PyObject, to_dlpack::Union{PyCall.PyObject, Function})
     return DLPack.unsafe_wrap(DLPack.DLManagedTensor(to_dlpack(o)), o)
 end
 
 """
-    wrap(::Type{<: AbstractArray{T, N}}, ::Type{<: MemoryLayout}, o::Py, to_dlpack)
+    wrap(::Type{<: AbstractArray{T, N}}, ::Type{<: MemoryLayout}, o::PyObject, to_dlpack)
 
 Type-inferrable alternative to `wrap(o, to_dlpack)`.
 """
-function DLPack.wrap(::Type{A}, ::Type{M}, o::PythonCall.Py, to_dlpack) where {
+function DLPack.wrap(::Type{A}, ::Type{M}, o::PyCall.PyObject, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
 }
     return DLPack.unsafe_wrap(A, M, DLPack.DLManagedTensor(to_dlpack(o)), o)
 end
 
 """
-    share(A::StridedArray, from_dlpack::Py)
+    share(A::StridedArray, from_dlpack::PyObject)
 
 Takes a Julia array and an external `from_dlpack` method that consumes PyCapsules
 following the DLPack protocol. Returns a Python tensor that shares the data with `A`.
 The resulting tensor will have all dimensions reversed with respect
 to the Julia array.
 """
-DLPack.share(A::StridedArray, from_dlpack::PythonCall.Py) = DLPack.share(A, PythonCall.Py, from_dlpack)
+function DLPack.share(A::StridedArray, from_dlpack::PyCall.PyObject)
+    return DLPack.share(A, PyCall.PyObject, from_dlpack)
+end
 
 """
-    share(A::StridedArray, ::Type{Py}, from_dlpack)
+    share(A::StridedArray, ::Type{PyObject}, from_dlpack)
 
-Similar to `share(A, from_dlpack::Py)`. Use when there is a need to
+Similar to `share(A, from_dlpack::PyObject)`. Use when there is a need to
 disambiguate the return type.
 """
-function DLPack.share(A::StridedArray, ::Type{PythonCall.Py}, from_dlpack)
+function DLPack.share(A::StridedArray, ::Type{PyCall.PyObject}, from_dlpack)
     capsule = DLPack.share(A)
     tensor = capsule.tensor
     tensor_ptr = pointer_from_objref(tensor)
@@ -105,12 +116,14 @@ function DLPack.share(A::StridedArray, ::Type{PythonCall.Py}, from_dlpack)
     DLPack.SHARES_POOL[tensor_ptr] = (capsule, A)
     tensor.deleter = DLPack.DELETER[]
 
-    pycapsule = PythonCall.pynew(
-        CPython.PyCapsule_New(tensor_ptr, DLPack.PYCAPSULE_NAME, C_NULL)
-    )
+    pycapsule = PyCall.PyObject(PyCall.@pycheck ccall(
+        (PyCall.@pysym :PyCapsule_New),
+        PyCall.PyPtr, (Ptr{Cvoid}, Ptr{Cchar}, Ptr{Cvoid}),
+        tensor_ptr, DLPack.PYCAPSULE_NAME, C_NULL
+    ))
 
     return from_dlpack(pycapsule)
 end
 
 
-end  # module DLPackPythonCall
+end  # module PyCallExt

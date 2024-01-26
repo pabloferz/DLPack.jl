@@ -401,13 +401,13 @@ function __init__()
 
     if !isdefined(Base, :get_extension)
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
-            include("../ext/DLPackCUDA.jl")
+            include("../ext/CUDAExt.jl")
         end
         @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
-            include("../ext/DLPackPyCall.jl")
+            include("../ext/PyCallExt.jl")
         end
         @require PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d" begin
-            include("../ext/DLPackPythonCall.jl")
+            include("../ext/PythonCallExt.jl")
         end
     end
 end
