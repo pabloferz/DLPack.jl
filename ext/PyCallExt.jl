@@ -96,16 +96,6 @@ The resulting tensor will have all dimensions reversed with respect
 to the Julia array.
 """
 function DLPack.share(A::StridedArray, from_dlpack::PyCall.PyObject)
-    return DLPack.share(A, PyCall.PyObject, from_dlpack)
-end
-
-"""
-    share(A::StridedArray, ::Type{PyObject}, from_dlpack)
-
-Similar to `share(A, from_dlpack::PyObject)`. Use when there is a need to
-disambiguate the return type.
-"""
-function DLPack.share(A::StridedArray, ::Type{PyCall.PyObject}, from_dlpack)
     capsule = DLPack.share(A)
     tensor = capsule.tensor
     tensor_ptr = pointer_from_objref(tensor)
@@ -123,6 +113,26 @@ function DLPack.share(A::StridedArray, ::Type{PyCall.PyObject}, from_dlpack)
     ))
 
     return from_dlpack(pycapsule)
+end
+
+
+##  Deprecations  ##
+
+# NOTE: replace by the following when our julia lower bound get to ≥ v"1.9".
+# @deprecate(
+#     DLPack.share(A::StridedArray, ::Type{PyCall.PyObject}, from_dlpack),
+#     DLPack.share(A, PyCall.pyfunction(from_dlpack, PyCall.PyObject)),
+#     false
+# )
+function DLPack.share(A::StridedArray, ::Type{PyCall.PyObject}, from_dlpack)
+    Base.depwarn("""
+        `DLPack.share`(A, ::Type{PyObject}), from_dlpack) is deprecated, use
+        `DLPack.share`(A, from_dlpack) instead. If `from_dlpack` is a julia function,
+        use `pyfunction` to wrap it.
+        """,
+        :share
+    )
+    DLPack.share(A, PyCall.pyfunction(from_dlpack, PyCall.PyObject))
 end
 
 
