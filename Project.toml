@@ -17,18 +17,22 @@ PyCallExt = "PyCall"
 PythonCallExt = "PythonCall"
 
 [compat]
+Aqua = "0.8"
 CUDA = "≥ 1.3"
 PyCall = "1.92"
 PythonCall = "≥ 0.7"
 Requires = "1.3"
+TestItemRunner = "0.2.2"
 julia = "1.3"
 
 [extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 
 [targets]
-test = ["CondaPkg", "CUDA", "PyCall", "PythonCall", "Test"]
+test = ["Aqua", "CondaPkg", "CUDA", "PyCall", "PythonCall", "Test", "TestItemRunner"]
