@@ -55,14 +55,30 @@ function DLPack.DLManagedTensor(po::PythonCall.Py)
     return tensor
 end
 
+# Docstring in src/DLPack.jl
+function DLPack.from_dlpack(o::PythonCall.Py)
+    tensor = DLPack.DLManagedTensor(o.__dlpack__())
+    return DLPack.unsafe_wrap(tensor, o)
+end
+
+"""
+    from_dlpack(::Type{<: AbstractArray{T, N}}, ::Type{<: MemoryLayout}, o::Py)
+
+Type-inferrable alternative to `from_dlpack`.
+"""
+function DLPack.from_dlpack(::Type{A}, ::Type{M}, o::PythonCall.Py) where {
+    T, N, A <: AbstractArray{T, N}, M
+}
+    tensor = DLPack.DLManagedTensor(o.__dlpack__())
+    return DLPack.unsafe_wrap(A, M, tensor, o)
+end
+
 """
     wrap(o::Py, to_dlpack)
 
-Takes a tensor `o::Py` and a `to_dlpack` function that generates a
-`DLManagedTensor` bundled in a PyCapsule, and returns a zero-copy
-`array::AbstractArray` pointing to the same data in `o`.
-For tensors with row-major ordering the resulting array will have all
-dimensions reversed.
+Similar to `from_dlpack`, but works for python arrays that do not implement a `__dlpack__`
+method. `to_dlpack` must be a function that, when applied to `o`, generates a
+`DLManagedTensor` bundled into a `PyCapsule`.
 """
 function DLPack.wrap(o::PythonCall.Py, to_dlpack::Union{PythonCall.Py, Function})
     return DLPack.unsafe_wrap(DLPack.DLManagedTensor(to_dlpack(o)), o)
@@ -71,7 +87,7 @@ end
 """
     wrap(::Type{<: AbstractArray{T, N}}, ::Type{<: MemoryLayout}, o::Py, to_dlpack)
 
-Type-inferrable alternative to `wrap(o, to_dlpack)`.
+Type-inferrable alternative to `wrap`.
 """
 function DLPack.wrap(::Type{A}, ::Type{M}, o::PythonCall.Py, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
@@ -104,7 +120,13 @@ function DLPack.share(A::StridedArray, from_dlpack::PythonCall.Py)
 
     return try
         from_dlpack(pycapsule)
-    catch
+    catch e
+        if !(
+            PythonCall.pyisinstance(e, PythonCall.pybuiltins.AttributeError) &&
+            any(contains.(string(PythonCall.Py(e)), ("__dlpack__", "__dlpack_device__")))
+        )
+            rethrow()
+        end
         ctx = DLPack.dldevice(tensor)
         device = (Int(ctx.device_type), ctx.device_id)
         from_dlpack(DLArray(pycapsule, device))

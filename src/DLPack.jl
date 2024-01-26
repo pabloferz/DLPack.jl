@@ -20,11 +20,6 @@ module DLPack
 using Requires
 
 
-##  Exports  ##
-
-export RowMajor, ColMajor
-
-
 ##  Types  ##
 
 @enum DLDeviceType::Cint begin
@@ -128,7 +123,12 @@ end
 abstract type MemoryLayout end
 
 struct ColMajor <: MemoryLayout end
+#
+export ColMajor
+
 struct RowMajor <: MemoryLayout end
+#
+export RowMajor
 
 """
     DLManager{T, N}
@@ -184,6 +184,19 @@ const SHARES_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
 
 ##  Wrapping and sharing  ##
 
+"""
+    from_dlpack(o)
+
+If `o` follows the DLPack specification, it returns a zero-copy `array::AbstractArray`
+pointing to the same data in `o`. For arrays with row-major ordering the resulting array
+will have all dimensions reversed.
+"""
+from_dlpack(o) = throw(ArgumentError("The input does not follow the DLPack specification"))
+#
+export from_dlpack
+
+# Similar to `from_dlpack`, but takes a second argument that generates a `DLManagedTensor`
+# possibly bundled in another data structure.
 function wrap end
 
 """

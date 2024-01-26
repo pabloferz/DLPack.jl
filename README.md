@@ -33,7 +33,9 @@ np = pyimport("jax.numpy")
 dl = pyimport("jax.dlpack")
 
 pyv = np.arange(10)
-v = DLPack.wrap(pyv, o -> @pycall dl.to_dlpack(o)::PyObject)
+v = from_dlpack(pyv)
+# For older jax version use:
+# v = DLPack.wrap(pyv, o -> @pycall dl.to_dlpack(o)::PyObject)
 
 (pyv[1] == 1).item()  # This is false since the first element is 0
 
@@ -44,7 +46,7 @@ v[1] = 1
 ```
 
 If the python tensor has more than one dimension and the memory layout is
-row-major the array returned by `DLPack.wrap` has its dimensions reversed.
+row-major the array returned by `DLPack.from_dlpack` has its dimensions reversed.
 Let us illustrate this now by importing a `torch.Tensor` via the
 `PythonCall` package:
 
@@ -55,7 +57,9 @@ using PythonCall
 torch = pyimport("torch")
 
 pyv = torch.arange(1, 5).reshape(2, 2)
-v = DLPack.wrap(pyv, torch.to_dlpack)
+v = from_dlpack(pyv)
+# For older torch releases use:
+# v = DLPack.wrap(pyv, torch.to_dlpack)
 
 Bool(v[2, 1] == 2 == pyv[0, 1])  # dimensions are reversed
 ```
@@ -84,7 +88,9 @@ using PyCall
 cupy = pyimport("cupy")
 
 pyv = cupy.arange(6).reshape(2, 3)
-v = DLPack.wrap(pyv, o -> pycall(o.toDlpack, PyObject))
+v = from_dlpack(pyv)
+# For older versions of cupy use:
+# v = DLPack.wrap(pyv, o -> pycall(o.toDlpack, PyObject))
 
 v .= 1
 pyv.sum().item() == 6  # true

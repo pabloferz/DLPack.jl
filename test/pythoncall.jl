@@ -10,7 +10,8 @@
 
     @testset "wrap" begin
         v = torch.ones((2, 4), dtype = torch.float64)
-        jv = DLPack.wrap(v, torch.to_dlpack)
+        follows_dlpack_spec = hasproperty(v, :__dlpack__)
+        jv = follows_dlpack_spec ? DLPack.from_dlpack(v) : DLPack.wrap(v, torch.to_dlpack)
         dlv = DLPack.DLManagedTensor(torch.to_dlpack(v))
         opaque_tensor = dlv.dl_tensor
 
