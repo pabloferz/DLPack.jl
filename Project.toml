@@ -1,7 +1,7 @@
 name = "DLPack"
 uuid = "53c2dc0f-f7d5-43fd-8906-6c0220547083"
 authors = ["Pablo Zubieta"]
-version = "0.1.2"
+version = "0.2.0"
 
 [deps]
 Requires = "ae029012-a4dd-5104-9daa-d747884805df"
