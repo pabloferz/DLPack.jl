@@ -98,4 +98,12 @@ pyv.sum().item() == 6  # true
 pyw = DLPack.share(v, cupy.from_dlpack)  # new cupy ndarray holding the same data
 ```
 
+> [!WARNING]
+>
+> Whenever a Python function allocates a lot of intermediate Python objects, Julia has no
+> way of knowing when it should garbage collect such objects, and in some cases the
+> allocated memory may grow too large. In such a case, it might be important to manually
+> call `GC.gc(false)` from time to time. See
+> https://github.com/pabloferz/DLPack.jl/issues/26 for an example of this issue.
+
 [1]: https://data-apis.org/array-api/latest/design_topics/data_interchange.html
