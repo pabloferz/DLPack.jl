@@ -4,8 +4,8 @@
     using PythonCall
 
 
-    const np = pyimport("numpy")
     const torch = pyimport("torch")
+    const np = pyimport("numpy")
 
 
     @testset "wrap" begin
