@@ -4,14 +4,31 @@
     using PythonCall
 
 
-    const torch = pyimport("torch")
     const np = pyimport("numpy")
+    const torch = pyimport("torch")
+
+
+    function module_version(m::Py)
+        major_minor_patch = first(split("$(m.__version__)", '.'), 3)
+        return VersionNumber(parse.(Int, major_minor_patch)...)
+    end
+
+    function from_torch_dlpack(v::Py)
+        dlpack_spec = hasproperty(v, :__dlpack__)
+        return dlpack_spec ? DLPack.from_dlpack(v) : DLPack.wrap(v, torch.to_dlpack)
+    end
 
 
     @testset "wrap" begin
+        if module_version(torch) ≥ v"2.2"
+            u = torch.ones(8, dtype = torch.bool)
+            jlu = from_torch_dlpack(u)
+            @test typeof(jlu) === Vector{Bool}
+            @test all(jlu)
+        end
+
         v = torch.ones((2, 4), dtype = torch.float64)
-        follows_dlpack_spec = hasproperty(v, :__dlpack__)
-        jv = follows_dlpack_spec ? DLPack.from_dlpack(v) : DLPack.wrap(v, torch.to_dlpack)
+        jv = from_torch_dlpack(v)
         dlv = DLPack.DLManagedTensor(torch.to_dlpack(v))
         opaque_tensor = dlv.dl_tensor
 
@@ -33,6 +50,12 @@
             np._from_dlpack
         else
             np.from_dlpack
+        end
+
+        if module_version(np) ≥ v"1.25"
+            u = ones(Bool, 8)
+            npu = DLPack.share(u, np_from_dlpack)
+            @test Bool(npu.dtype == np.bool_)
         end
 
         v = ComplexF32[1, 2, 3]
