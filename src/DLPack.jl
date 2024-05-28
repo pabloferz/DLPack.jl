@@ -22,6 +22,11 @@ using Requires
 
 ##  Types  ##
 
+struct DLPackVersion
+    major::Cuint
+    minor::Cuint
+end
+
 @enum DLDeviceType::Cint begin
     kDLCPU = 1
     kDLCUDA = 2
@@ -108,6 +113,14 @@ mutable struct DLManagedTensor
         # delete the imported one (e.g. CuPy).
         return DLManagedTensor(manager.dl_tensor, Ptr{Cvoid}(dlptr), manager.deleter)
     end
+end
+
+mutable struct DLManagedTensorVersioned
+    version::DLPackVersion
+    manager_ctx::Ptr{Cvoid}
+    deleter::Ptr{Cvoid}
+    flags::Culonglong
+    dl_tensor::DLTensor
 end
 
 """
