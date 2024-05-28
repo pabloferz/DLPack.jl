@@ -37,6 +37,7 @@ using Requires
     kDLOneAPI = 14
     kDLWebGPU = 15
     kDLHexagon = 16
+    kDLMAIA = 17
 end
 
 struct DLDevice
