@@ -18,6 +18,7 @@ end
 
 const CPython = PythonCall.C
 const DLArray = PythonCall.pynew()
+const PyTypes = Union{PythonCall.Py, PythonCall.PyArray, PythonCall.PyIterable}
 
 
 """
@@ -56,9 +57,10 @@ function DLPack.DLManagedTensor(po::PythonCall.Py)
 end
 
 # Docstring in src/DLPack.jl
-function DLPack.from_dlpack(o::PythonCall.Py)
-    tensor = DLPack.DLManagedTensor(o.__dlpack__())
-    return DLPack.unsafe_wrap(tensor, o)
+function DLPack.from_dlpack(o::PyTypes)
+    py = PythonCall.Py(o)
+    tensor = DLPack.DLManagedTensor(py.__dlpack__())
+    return DLPack.unsafe_wrap(tensor, py)
 end
 
 """
@@ -66,11 +68,12 @@ end
 
 Type-inferrable alternative to `from_dlpack`.
 """
-function DLPack.from_dlpack(::Type{A}, ::Type{M}, o::PythonCall.Py) where {
+function DLPack.from_dlpack(::Type{A}, ::Type{M}, o::PyTypes) where {
     T, N, A <: AbstractArray{T, N}, M
 }
-    tensor = DLPack.DLManagedTensor(o.__dlpack__())
-    return DLPack.unsafe_wrap(A, M, tensor, o)
+    py = PythonCall.Py(o)
+    tensor = DLPack.DLManagedTensor(py.__dlpack__())
+    return DLPack.unsafe_wrap(A, M, tensor, py)
 end
 
 """
@@ -80,8 +83,9 @@ Similar to `from_dlpack`, but works for python arrays that do not implement a `_
 method. `to_dlpack` must be a function that, when applied to `o`, generates a
 `DLManagedTensor` bundled into a `PyCapsule`.
 """
-function DLPack.wrap(o::PythonCall.Py, to_dlpack::Union{PythonCall.Py, Function})
-    return DLPack.unsafe_wrap(DLPack.DLManagedTensor(to_dlpack(o)), o)
+function DLPack.wrap(o::PyTypes, to_dlpack::Union{PythonCall.Py, Function})
+    py = PythonCall.Py(o)
+    return DLPack.unsafe_wrap(DLPack.DLManagedTensor(to_dlpack(py)), py)
 end
 
 """
@@ -89,10 +93,11 @@ end
 
 Type-inferrable alternative to `wrap`.
 """
-function DLPack.wrap(::Type{A}, ::Type{M}, o::PythonCall.Py, to_dlpack) where {
+function DLPack.wrap(::Type{A}, ::Type{M}, o::PyTypes, to_dlpack) where {
     T, N, A <: AbstractArray{T, N}, M
 }
-    return DLPack.unsafe_wrap(A, M, DLPack.DLManagedTensor(to_dlpack(o)), o)
+    py = PythonCall.Py(o)
+    return DLPack.unsafe_wrap(A, M, DLPack.DLManagedTensor(to_dlpack(py)), py)
 end
 
 """
