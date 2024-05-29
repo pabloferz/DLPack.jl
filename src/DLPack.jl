@@ -22,6 +22,11 @@ using Requires
 
 ##  Types  ##
 
+struct DLPackVersion
+    major::Cuint
+    minor::Cuint
+end
+
 @enum DLDeviceType::Cint begin
     kDLCPU = 1
     kDLCUDA = 2
@@ -37,6 +42,7 @@ using Requires
     kDLOneAPI = 14
     kDLWebGPU = 15
     kDLHexagon = 16
+    kDLMAIA = 17
 end
 
 struct DLDevice
@@ -51,6 +57,7 @@ end
     kDLOpaqueHandle = 3
     kDLBfloat = 4
     kDLComplex = 5
+    kDLBool = 6
 end
 
 """
@@ -106,6 +113,14 @@ mutable struct DLManagedTensor
         # delete the imported one (e.g. CuPy).
         return DLManagedTensor(manager.dl_tensor, Ptr{Cvoid}(dlptr), manager.deleter)
     end
+end
+
+mutable struct DLManagedTensorVersioned
+    version::DLPackVersion
+    manager_ctx::Ptr{Cvoid}
+    deleter::Ptr{Cvoid}
+    flags::Culonglong
+    dl_tensor::DLTensor
 end
 
 """
@@ -294,6 +309,7 @@ Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 Mapping from Julia's numeric types to their `DLDataType` representation.
 """
 jltypes_to_dtypes() = Dict(
+    Bool => DLDataType(kDLBool, 8, 1),
     Int8 => DLDataType(kDLInt, 8, 1),
     Int16 => DLDataType(kDLInt, 16, 1),
     Int32 => DLDataType(kDLInt, 32, 1),
@@ -315,6 +331,7 @@ jltypes_to_dtypes() = Dict(
 Inverse mapping of `jltypes_to_dtypes`.
 """
 dtypes_to_jltypes() = Dict(
+    DLDataType(kDLBool, 8, 1) => Bool,
     DLDataType(kDLInt, 8, 1) => Int8,
     DLDataType(kDLInt, 16, 1) => Int16,
     DLDataType(kDLInt, 32, 1) => Int32,
