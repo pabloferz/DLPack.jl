@@ -21,12 +21,12 @@ using Requires
 using BFloat16s: BFloat16
 
 
-##  Exports  ##
-
-export RowMajor, ColMajor
-
-
 ##  Types  ##
+
+struct DLPackVersion
+    major::Cuint
+    minor::Cuint
+end
 
 @enum DLDeviceType::Cint begin
     kDLCPU = 1
@@ -43,6 +43,7 @@ export RowMajor, ColMajor
     kDLOneAPI = 14
     kDLWebGPU = 15
     kDLHexagon = 16
+    kDLMAIA = 17
 end
 
 struct DLDevice
@@ -57,6 +58,7 @@ end
     kDLOpaqueHandle = 3
     kDLBfloat = 4
     kDLComplex = 5
+    kDLBool = 6
 end
 
 """
@@ -114,6 +116,14 @@ mutable struct DLManagedTensor
     end
 end
 
+mutable struct DLManagedTensorVersioned
+    version::DLPackVersion
+    manager_ctx::Ptr{Cvoid}
+    deleter::Ptr{Cvoid}
+    flags::Culonglong
+    dl_tensor::DLTensor
+end
+
 """
     Capsule
 
@@ -129,7 +139,12 @@ end
 abstract type MemoryLayout end
 
 struct ColMajor <: MemoryLayout end
+#
+export ColMajor
+
 struct RowMajor <: MemoryLayout end
+#
+export RowMajor
 
 """
     DLManager{T, N}
@@ -167,6 +182,15 @@ const USED_PYCAPSULE_NAME = Ref(Cchar.(
     (0x75, 0x73, 0x65, 0x64, 0x5f, 0x64, 0x6c, 0x74, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00)
 ))
 
+"""
+    DELETER
+
+Wraps a pointer to the function that will get called whenever any array that is shared
+with another library gets deleted. By default, `DELETER` wraps a `C_NULL`, but `DELETER[]`
+is set to `@cfunction(release, Cvoid, (Ptr{Cvoid},))` during module initialization.
+"""
+const DELETER = Ref(C_NULL)
+
 const WRAPS_POOL = IdDict{WeakRef, Any}()
 
 # We held references to the arrays that will be shared to python libraries, and the
@@ -176,6 +200,19 @@ const SHARES_POOL = Dict{Ptr{Cvoid}, Tuple{Capsule, Any}}()
 
 ##  Wrapping and sharing  ##
 
+"""
+    from_dlpack(o)
+
+If `o` follows the DLPack specification, it returns a zero-copy `array::AbstractArray`
+pointing to the same data in `o`. For arrays with row-major ordering the resulting array
+will have all dimensions reversed.
+"""
+from_dlpack(o) = throw(ArgumentError("The input does not follow the DLPack specification"))
+#
+export from_dlpack
+
+# Similar to `from_dlpack`, but takes a second argument that generates a `DLManagedTensor`
+# possibly bundled in another data structure.
 function wrap end
 
 """
@@ -273,6 +310,7 @@ Base.convert(::Type{T}, code::DLDataTypeCode) where {T <: Integer} = T(code)
 Mapping from Julia's numeric types to their `DLDataType` representation.
 """
 jltypes_to_dtypes() = Dict(
+    Bool => DLDataType(kDLBool, 8, 1),
     Int8 => DLDataType(kDLInt, 8, 1),
     Int16 => DLDataType(kDLInt, 16, 1),
     Int32 => DLDataType(kDLInt, 32, 1),
@@ -295,6 +333,7 @@ jltypes_to_dtypes() = Dict(
 Inverse mapping of `jltypes_to_dtypes`.
 """
 dtypes_to_jltypes() = Dict(
+    DLDataType(kDLBool, 8, 1) => Bool,
     DLDataType(kDLInt, 8, 1) => Int8,
     DLDataType(kDLInt, 16, 1) => Int16,
     DLDataType(kDLInt, 32, 1) => Int32,
@@ -322,6 +361,8 @@ function jlarray_type(::Val{D}) where {D}
 end
 
 dldevice(::StridedArray) = DLDevice(kDLCPU, Cint(0))
+dldevice(tensor::DLTensor) = tensor.ctx
+dldevice(manager::DLManagedTensor) = dldevice(manager.dl_tensor)
 
 device_type(ctx::DLDevice) = ctx.device_type
 device_type(tensor::DLTensor) = device_type(tensor.ctx)
@@ -368,10 +409,12 @@ function is_col_major(manager::DLManager{T, N})::Bool where {T, N}
     return is_col_major(manager.manager, Val(N))
 end
 #
-function is_col_major(manager::DLManagedTensor, val::Val{N})::Bool where {N}
+is_col_major(manager::DLManagedTensor, val::Val{0}) = true
+
+function is_col_major(manager::DLManagedTensor, val::Val)::Bool
     sz = unsafe_size(manager, val)
     st = unsafe_strides(manager, val)
-    return N == 0 || prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
+    return prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
 end
 
 reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
@@ -389,19 +432,19 @@ include("extras.jl")
 ##  Module initialization  ##
 
 function __init__()
+    DELETER[] = @cfunction(release, Cvoid, (Ptr{Cvoid},))
 
-    @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
-        include("cuda.jl")
+    if !isdefined(Base, :get_extension)
+        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
+            include("../ext/CUDAExt.jl")
+        end
+        @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
+            include("../ext/PyCallExt.jl")
+        end
+        @require PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d" begin
+            include("../ext/PythonCallExt.jl")
+        end
     end
-
-    @require PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0" begin
-        include("pycall.jl")
-    end
-
-    @require PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d" begin
-        include("pythoncall.jl")
-    end
-
 end
 
 

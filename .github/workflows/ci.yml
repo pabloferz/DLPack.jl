@@ -14,6 +14,7 @@ jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.version == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
@@ -26,13 +27,16 @@ jobs:
           - macOS-latest
         arch: [x64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+      - name: Install system prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y patchelf
       - name: Setup julia
         uses: julia-actions/setup-julia@v1
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         env:
           cache-name: cache-artifacts
         with:
