@@ -1,7 +1,7 @@
 name = "DLPack"
 uuid = "53c2dc0f-f7d5-43fd-8906-6c0220547083"
 authors = ["Pablo Zubieta"]
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 BFloat16s = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
