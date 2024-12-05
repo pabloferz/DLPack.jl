@@ -18,6 +18,7 @@ module DLPack
 ##  Dependencies  ##
 
 using Requires
+using BFloat16s: BFloat16
 
 
 ##  Exports  ##
@@ -280,6 +281,7 @@ jltypes_to_dtypes() = Dict(
     UInt16 => DLDataType(kDLUInt, 16, 1),
     UInt32 => DLDataType(kDLUInt, 32, 1),
     UInt64 => DLDataType(kDLUInt, 64, 1),
+    BFloat16 => DLDataType(kDLBfloat, 16, 1),
     Float16 => DLDataType(kDLFloat, 16, 1),
     Float32 => DLDataType(kDLFloat, 32, 1),
     Float64 => DLDataType(kDLFloat, 64, 1),
@@ -301,6 +303,7 @@ dtypes_to_jltypes() = Dict(
     DLDataType(kDLUInt, 16, 1) => UInt16,
     DLDataType(kDLUInt, 32, 1) => UInt32,
     DLDataType(kDLUInt, 64, 1) => UInt64,
+    DLDataType(kDLBfloat, 16, 1) => BFloat16,
     DLDataType(kDLFloat, 16, 1) => Float16,
     DLDataType(kDLFloat, 32, 1) => Float32,
     DLDataType(kDLFloat, 64, 1) => Float64,
