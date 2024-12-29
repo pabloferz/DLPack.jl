@@ -19,7 +19,7 @@ PythonCallExt = "PythonCall"
 
 [compat]
 Aqua = "0.8"
-BFloat16s = "0.4"
+BFloat16s = "≥ 0.4"
 CUDA = "≥ 1.3"
 PyCall = "1.92"
 PythonCall = "≥ 0.7"
