@@ -17,8 +17,8 @@ module DLPack
 
 ##  Dependencies  ##
 
-using Requires
 using BFloat16s: BFloat16
+using Requires
 
 
 ##  Types  ##
