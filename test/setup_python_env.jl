@@ -8,10 +8,10 @@ python_deps = if VERSION == v"1.6.7"
     ]
 else
     [
-        "jax",
+        "jax<0.4",
     ]
 end
-push!(python_deps, "pytorch", "setuptools<70")
+push!(python_deps, "numpy<2.1", "pytorch", "setuptools<70")
 
 CondaPkg.add(CondaPkg.PkgREPL.parse_pkg.(python_deps))
 
