@@ -8,7 +8,7 @@ python_deps = if VERSION == v"1.6.7"
     ]
 else
     [
-        "jax",
+        "jax<0.4",
     ]
 end
 push!(python_deps, "numpy<2.1", "pytorch", "setuptools<70")
