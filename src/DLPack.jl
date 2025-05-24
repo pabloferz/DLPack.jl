@@ -414,7 +414,8 @@ is_col_major(manager::DLManagedTensor, val::Val{0}) = true
 function is_col_major(manager::DLManagedTensor, val::Val)::Bool
     sz = unsafe_size(manager, val)
     st = unsafe_strides(manager, val)
-    return prod(sz) == 0 || st == Base.size_to_strides(1, sz...)
+    number_of_elements = prod(sz)
+    return number_of_elements == 0 || (st == Base.size_to_strides(1, sz...) && number_of_elements > sz[end])
 end
 
 reshape_me_maybe(::Type{RowMajor}, array) = reshape(array, (reverse ∘ size)(array))
