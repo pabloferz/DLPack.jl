@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # See LICENSE.md at https://github.com/pabloferz/DLPack.jl
 
-module CUDAExt
+module DLPackCUDAExt
 
 
 ##  Dependencies  ##
@@ -50,4 +50,4 @@ function Base.unsafe_wrap(::Type{<: CUDA.CuArray}, manager::DLPack.DLManager{T})
 end
 
 
-end  # module CUDAExt
+end  # module DLPackCUDAExt

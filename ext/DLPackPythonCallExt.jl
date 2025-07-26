@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # See LICENSE.md at https://github.com/pabloferz/DLPack.jl
 
-module PythonCallExt
+module DLPackPythonCallExt
 
 
 ##  Dependencies  ##
@@ -189,4 +189,4 @@ function __init__()
 end
 
 
-end  # module PythonCallExt
+end  # module DLPackPythonCallExt
